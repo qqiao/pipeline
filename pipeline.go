@@ -42,7 +42,10 @@ func (p *Pipeline[I, O]) AddStage(workerPoolSize int,
 				defer close(out)
 				for {
 					select {
-					case v := <-p.producer:
+					case v, ok := <-p.producer:
+						if !ok {
+							return
+						}
 						out <- v
 					case <-p.done:
 						return
@@ -81,7 +84,10 @@ func (p *Pipeline[I, O]) Start() {
 		defer close(out)
 		for {
 			select {
-			case v := <-stageOut:
+			case v, ok := <-stageOut:
+				if !ok {
+					return
+				}
 				out <- v.(O)
 			case <-p.done:
 				return

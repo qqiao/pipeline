@@ -24,6 +24,10 @@ import (
 func ExamplePipeline_Start() {
 	done := make(chan struct{})
 	producer := make(chan int)
+	go func() {
+		defer close(producer)
+		producer <- 2
+	}()
 
 	consumer := func(out <-chan int) {
 		for v := range out {
