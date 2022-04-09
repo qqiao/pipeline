@@ -31,7 +31,7 @@ type Stage[I, O any] struct {
 	done           <-chan struct{}
 	in             <-chan I
 	workerPoolSize int
-	worker         func(in I) O
+	worker         func(I) O
 }
 
 // NewStage creates a new stage with necessary parameters specified.
@@ -51,7 +51,7 @@ type Stage[I, O any] struct {
 // This function returns ErrInvalidWorkerPoolSize if workerPoolSize is not at
 // least 1.
 func NewStage[I, O any](done <-chan struct{}, workerPoolSize int, in <-chan I,
-	worker func(in I) O) (*Stage[I, O], error) {
+	worker func(I) O) (*Stage[I, O], error) {
 	if workerPoolSize < 1 {
 		return nil, ErrInvalidWorkerPoolSize
 	}
