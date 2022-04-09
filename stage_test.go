@@ -14,14 +14,18 @@ func ExampleStage_Start() {
 	done := make(chan struct{})
 	input := make(chan int)
 
-	stage, err := pipeline.NewStage[int, int](done, 10, input, func(in int) int {
+	// sq takes an integer and returns the square of that integer
+	sq := func(in int) int {
 		return in * in
-	})
+	}
+
+	stage, err := pipeline.NewStage[int, int](done, 10, input, sq)
 	if err != nil {
 		log.Panicf("Error creating stage: %v", err)
 	}
 
 	output := stage.Start()
+	input <- 2
 	input <- 3
 	close(input)
 
@@ -29,9 +33,54 @@ func ExampleStage_Start() {
 	for v := range output {
 		results = append(results, v)
 	}
+	sort.Ints(results)
 	fmt.Printf("%v", results)
 
-	// Output: [9]
+	// Output: [4 9]
+}
+
+func ExampleStage_Start_ordered() {
+	type OrderedEntry struct {
+		Order int
+		Value int
+	}
+	done := make(chan struct{})
+	input := make(chan OrderedEntry)
+
+	// sq takes an integer and returns the square of that integer
+	// in this example, it also takes an additional parameter which is the
+	// order of the input. This value is also returned as part of the result
+	// so that we can ensure that the order of the results matches the order
+	// of the input
+	sq := func(in OrderedEntry) OrderedEntry {
+		return OrderedEntry{
+			Order: in.Order,
+			Value: in.Value * in.Value,
+		}
+	}
+
+	stage, err := pipeline.NewStage[OrderedEntry, OrderedEntry](done, 10, input, sq)
+	if err != nil {
+		log.Panicf("Error creating stage: %v", err)
+	}
+
+	output := stage.Start()
+	input <- OrderedEntry{0, 2}
+	input <- OrderedEntry{1, 3}
+	close(input)
+
+	var results []OrderedEntry
+	for v := range output {
+		results = append(results, v)
+	}
+
+	// Once we have the results, we sort based on the order
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Order < results[j].Order
+	})
+	fmt.Printf("%v", results)
+
+	// Output: [{0 4} {1 9}]
 }
 
 func TestStage_Start(t *testing.T) {
