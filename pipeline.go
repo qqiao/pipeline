@@ -14,7 +14,7 @@
 
 package pipeline
 
-type Consumer[C any] func(<-chan C)
+type Consumer[C any] func(Producer[C])
 
 type Producer[P any] <-chan P
 
@@ -73,6 +73,12 @@ func (p *Pipeline[I, O]) AddStage(workerPoolSize int,
 
 	p.stages = append(p.stages, stage)
 	return p, nil
+}
+
+func (p *Pipeline[I, O]) AsConsumer() Consumer[I] {
+	return func(producer Producer[I]) {
+		p.producer = producer
+	}
 }
 
 func (p *Pipeline[I, O]) Start() Producer[O] {

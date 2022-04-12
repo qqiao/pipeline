@@ -116,7 +116,7 @@ func (s *Stage[I, O]) Start() Producer[O] {
 			workerIn <- input
 		}
 	}()
-	s.merge(s.done, cs)
+	go s.merge(s.done, cs)
 	return s.out
 }
 
@@ -142,5 +142,4 @@ func (s *Stage[I, O]) merge(done <-chan struct{}, cs chan (chan O)) {
 		}
 		wg.Wait()
 	}()
-
 }

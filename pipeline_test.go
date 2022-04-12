@@ -29,7 +29,7 @@ func ExamplePipeline_Start() {
 		producer <- 2
 	}()
 
-	consumer := func(out <-chan int) {
+	consumer := func(out pipeline.Producer[int]) {
 		for v := range out {
 			fmt.Println(v)
 		}
