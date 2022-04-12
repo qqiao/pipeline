@@ -22,6 +22,7 @@ type Producer[P any] <-chan P
 type Pipeline[I, O any] struct {
 	consumer Consumer[O]
 	done     <-chan struct{}
+	out      chan O
 	producer Producer[I]
 	stages   []*Stage[any, any]
 }
@@ -31,6 +32,7 @@ func NewPipeline[I, O any](done <-chan struct{}, producer Producer[I],
 	return &Pipeline[I, O]{
 		consumer: consumer,
 		done:     done,
+		out:      make(chan O),
 		producer: producer,
 		stages:   make([]*Stage[any, any], 0),
 	}
@@ -38,9 +40,9 @@ func NewPipeline[I, O any](done <-chan struct{}, producer Producer[I],
 
 func (p *Pipeline[I, O]) AddStage(workerPoolSize int,
 	worker Worker[any, any]) (*Pipeline[I, O], error) {
-	var producer func() <-chan any
+	var producerFunc func() Producer[any]
 	if len(p.stages) == 0 {
-		producer = func() <-chan any {
+		producerFunc = func() Producer[any] {
 			out := make(chan any)
 
 			go func() {
@@ -61,10 +63,10 @@ func (p *Pipeline[I, O]) AddStage(workerPoolSize int,
 			return out
 		}
 	} else {
-		producer = p.stages[len(p.stages)-1].Start
+		producerFunc = p.stages[len(p.stages)-1].Start
 	}
 
-	stage, err := NewStage[any, any](p.done, workerPoolSize, producer(), worker)
+	stage, err := NewStage[any, any](p.done, workerPoolSize, producerFunc(), worker)
 	if err != nil {
 		return nil, err
 	}
@@ -73,12 +75,10 @@ func (p *Pipeline[I, O]) AddStage(workerPoolSize int,
 	return p, nil
 }
 
-func (p *Pipeline[I, O]) Start() {
+func (p *Pipeline[I, O]) Start() Producer[O] {
 	if len(p.stages) < 1 {
-		return
+		return nil
 	}
-
-	out := make(chan O)
 
 	var stageOut <-chan any
 	for _, stage := range p.stages {
@@ -86,19 +86,20 @@ func (p *Pipeline[I, O]) Start() {
 	}
 
 	go func() {
-		defer close(out)
+		defer close(p.out)
 		for {
 			select {
 			case v, ok := <-stageOut:
 				if !ok {
 					return
 				}
-				out <- v.(O)
+				p.out <- v.(O)
 			case <-p.done:
 				return
 			}
 		}
 	}()
 
-	p.consumer(out)
+	p.consumer(p.out)
+	return p.out
 }

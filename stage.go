@@ -32,8 +32,9 @@ type Worker[I, O any] func(I) O
 type Stage[I, O any] struct {
 	done           <-chan struct{}
 	in             <-chan I
+	out            chan O
 	workerPoolSize int
-	worker         func(I) O
+	worker         Worker[I, O]
 }
 
 // NewStage creates a new stage with necessary parameters specified.
@@ -60,12 +61,14 @@ func NewStage[I, O any](done <-chan struct{}, workerPoolSize int,
 	return &Stage[I, O]{
 		done:           done,
 		in:             in,
+		out:            make(chan O),
 		workerPoolSize: workerPoolSize,
 		worker:         worker,
 	}, nil
 }
 
-// Start method starts the processing of the stage.
+// Start method starts the processing of the stage, and returns a Producer of
+// the output type of the current stage.
 //
 // This method is responsible for creating the worker pool, distributing work
 // between the workers and collating the results in the end.
@@ -80,7 +83,7 @@ func NewStage[I, O any](done <-chan struct{}, workerPoolSize int,
 // Please also note that order is NOT guaranteed by the Stage. That is, results
 // could come out of the channel in different order from they were read in the
 // input channel.
-func (s *Stage[I, O]) Start() <-chan O {
+func (s *Stage[I, O]) Start() Producer[O] {
 	workerIn := make(chan I)
 	cs := make(chan (chan O))
 	go func() {
@@ -113,19 +116,18 @@ func (s *Stage[I, O]) Start() <-chan O {
 			workerIn <- input
 		}
 	}()
-
-	return s.merge(s.done, cs)
+	s.merge(s.done, cs)
+	return s.out
 }
 
-func (s *Stage[I, O]) merge(done <-chan struct{}, cs chan (chan O)) <-chan O {
+func (s *Stage[I, O]) merge(done <-chan struct{}, cs chan (chan O)) {
 	var wg sync.WaitGroup
-	out := make(chan O)
 
 	output := func(in <-chan O) {
 		defer wg.Done()
 		for o := range in {
 			select {
-			case out <- o:
+			case s.out <- o:
 			case <-done:
 				return
 			}
@@ -133,7 +135,7 @@ func (s *Stage[I, O]) merge(done <-chan struct{}, cs chan (chan O)) <-chan O {
 	}
 
 	go func() {
-		defer close(out)
+		defer close(s.out)
 		for c := range cs {
 			wg.Add(1)
 			go output(c)
@@ -141,5 +143,4 @@ func (s *Stage[I, O]) merge(done <-chan struct{}, cs chan (chan O)) <-chan O {
 		wg.Wait()
 	}()
 
-	return out
 }
