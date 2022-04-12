@@ -23,6 +23,8 @@ var (
 	ErrInvalidWorkerPoolSize = errors.New("invalid worker pool size")
 )
 
+type Worker[I, O any] func(I) O
+
 // Stage represents a single stage in the pipeline.
 //
 // Each Stage should be considered a unit of work done to the data in the
@@ -50,8 +52,8 @@ type Stage[I, O any] struct {
 //
 // This function returns ErrInvalidWorkerPoolSize if workerPoolSize is not at
 // least 1.
-func NewStage[I, O any](done <-chan struct{}, workerPoolSize int, in <-chan I,
-	worker func(I) O) (*Stage[I, O], error) {
+func NewStage[I, O any](done <-chan struct{}, workerPoolSize int,
+	in Producer[I], worker Worker[I, O]) (*Stage[I, O], error) {
 	if workerPoolSize < 1 {
 		return nil, ErrInvalidWorkerPoolSize
 	}
