@@ -25,10 +25,10 @@ var (
 
 type Worker[I, O any] func(I) O
 
-// Stage represents a single stage in the pipeline.
+// Stage represents a single stage in the Pipeline.
 //
 // Each Stage should be considered a unit of work done to the data in the
-// pipeline.
+// Pipeline.
 type Stage[I, O any] struct {
 	done           <-chan struct{}
 	in             <-chan I

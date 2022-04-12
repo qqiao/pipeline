@@ -43,7 +43,7 @@ func ExamplePipeline_Start() {
 	if err != nil {
 		log.Fatalf("Unable to add stage: %v", err)
 	}
-	p.Start()
+	p.Produces()
 
 	// Output: 4
 }

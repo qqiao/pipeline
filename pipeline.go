@@ -14,13 +14,16 @@
 
 package pipeline
 
-type Consumer[C any] func(Producer[C])
+type Consumer[I any] interface {
+	Consumes(Producer[I])
+}
+type ConsumerFunc[I any] func(Producer[I])
 
-type Producer[P any] <-chan P
+type Producer[O any] <-chan O
 
-// Pipeline represents data processing pipeline.
+// Pipeline represents data processing Pipeline.
 type Pipeline[I, O any] struct {
-	consumer Consumer[O]
+	consumer ConsumerFunc[O]
 	done     <-chan struct{}
 	out      chan O
 	producer Producer[I]
@@ -28,7 +31,7 @@ type Pipeline[I, O any] struct {
 }
 
 func NewPipeline[I, O any](done <-chan struct{}, producer Producer[I],
-	consumer Consumer[O]) *Pipeline[I, O] {
+	consumer ConsumerFunc[O]) *Pipeline[I, O] {
 	return &Pipeline[I, O]{
 		consumer: consumer,
 		done:     done,
@@ -75,13 +78,11 @@ func (p *Pipeline[I, O]) AddStage(workerPoolSize int,
 	return p, nil
 }
 
-func (p *Pipeline[I, O]) AsConsumer() Consumer[I] {
-	return func(producer Producer[I]) {
-		p.producer = producer
-	}
+func (p *Pipeline[I, O]) Consumes(producer Producer[I]) {
+	p.producer = producer
 }
 
-func (p *Pipeline[I, O]) Start() Producer[O] {
+func (p *Pipeline[I, O]) Produces() Producer[O] {
 	if len(p.stages) < 1 {
 		return nil
 	}
