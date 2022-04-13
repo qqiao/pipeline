@@ -21,7 +21,7 @@ import (
 	"github.com/qqiao/pipeline"
 )
 
-func ExamplePipeline_Produces() {
+func ExamplePipeline_Consumes() {
 	done := make(chan struct{})
 	producer := make(chan int)
 	go func() {
@@ -40,6 +40,32 @@ func ExamplePipeline_Produces() {
 	}
 	p, err := pipeline.NewPipeline[int](done, consumer).AddStage(10, sq)
 	p.Consumes(producer)
+	if err != nil {
+		log.Fatalf("Unable to add stage: %v", err)
+	}
+	p.Produces()
+
+	// Output: 4
+}
+
+func ExamplePipeline_Produces() {
+	done := make(chan struct{})
+	producer := make(chan int)
+	go func() {
+		defer close(producer)
+		producer <- 2
+	}()
+
+	consumer := func(out pipeline.Producer[int]) {
+		for v := range out {
+			fmt.Println(v)
+		}
+	}
+	sq := func(in any) any {
+		i := in.(int)
+		return i * i
+	}
+	p, err := pipeline.NewPipelineWithProducer(done, consumer, producer).AddStage(10, sq)
 	if err != nil {
 		log.Fatalf("Unable to add stage: %v", err)
 	}

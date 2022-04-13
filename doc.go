@@ -13,6 +13,7 @@
 // limitations under the License.
 
 /*
+
 Package pipeline contains an implementation of the Pipeline concurrency pattern
 with Go 1.18 generics support.
 
@@ -47,7 +48,7 @@ A ConsumerFunc, which is a function that takes a channel into which the results
 of the Pipeline are sent as its sole argument. Since a channel where values are
 sent into is also the definition of a Producer, you can consider a ConsumerFunc
 as this:
-    type ConsumerFunc[I] func(Producer[I])
+    type ConsumerFunc[I any] func(Producer[I])
 
 More advanced uses of the Consumer and Producer pattern will be discussed
 further in the Chaining Pipelines section.
@@ -96,7 +97,8 @@ a producer of another Pipeline by passing the return value of the Produces
 function. A pipeline can also directly consume the result of another Pipeline
 with the Consumes method.
 
-Examples of composing pipelines can be found in the example section of both
-the AsProducer and AsConsumer section.
+Examples of composing pipelines can be found in the example of the Consumes
+method.
+
 */
 package pipeline

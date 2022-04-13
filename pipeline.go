@@ -14,11 +14,19 @@
 
 package pipeline
 
+import "errors"
+
+// Consumer is an interface that wraps the Consume method.
 type Consumer[I any] interface {
 	Consumes(Producer[I])
 }
+
+// ConsumerFunc is a function that consumes values from the Producer
+//
+// The Consumes function of a Consumer is a ConsumerFunc.
 type ConsumerFunc[I any] func(Producer[I])
 
+// Producer is a channel from which a consumer can read its inputs from.
 type Producer[O any] <-chan O
 
 // Pipeline represents data processing Pipeline.
@@ -30,6 +38,18 @@ type Pipeline[I, O any] struct {
 	stages   []*Stage[any, any]
 }
 
+// Errors for invalid pipeline states
+var (
+	ErrNoProducer = errors.New("no producer")
+	ErrNoStage    = errors.New("no stage")
+)
+
+// NewPipeline creates a pipeline with the done channel and consumer function
+// given.
+//
+// Please note that pipelines created this way does not have a producer channel,
+// thus calling AddStage before calling Consumes will result in AddStage
+// throwing an ErrNoProducer.
 func NewPipeline[I, O any](done <-chan struct{}, consumer ConsumerFunc[O]) *Pipeline[I, O] {
 	return &Pipeline[I, O]{
 		consumer: consumer,
@@ -49,6 +69,9 @@ func NewPipelineWithProducer[I, O any](done <-chan struct{},
 
 func (p *Pipeline[I, O]) AddStage(workerPoolSize int,
 	worker Worker[any, any]) (*Pipeline[I, O], error) {
+	if p.producer == nil {
+		return nil, ErrNoProducer
+	}
 	var producerFunc func() Producer[any]
 	if len(p.stages) == 0 {
 		producerFunc = func() Producer[any] {
@@ -88,9 +111,9 @@ func (p *Pipeline[I, O]) Consumes(producer Producer[I]) {
 	p.producer = producer
 }
 
-func (p *Pipeline[I, O]) Produces() Producer[O] {
+func (p *Pipeline[I, O]) Produces() (Producer[O], error) {
 	if len(p.stages) < 1 {
-		return nil
+		return nil, ErrNoStage
 	}
 
 	var stageOut <-chan any
@@ -114,5 +137,5 @@ func (p *Pipeline[I, O]) Produces() Producer[O] {
 	}()
 
 	p.consumer(p.out)
-	return p.out
+	return p.out, nil
 }
