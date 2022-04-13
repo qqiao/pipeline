@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-package pipeline
+package pipeline // import "github.com/qqiao/pipeline"
 
 import "errors"
 
@@ -50,12 +50,11 @@ var (
 // Please note that pipelines created this way does not have a producer channel,
 // thus calling AddStage before calling Consumes will result in AddStage
 // throwing an ErrNoProducer.
-func NewPipeline[I, O any](done <-chan struct{}, consumer ConsumerFunc[O]) *Pipeline[I, O] {
+func NewPipeline[I, O any](done <-chan struct{}) *Pipeline[I, O] {
 	return &Pipeline[I, O]{
-		consumer: consumer,
-		done:     done,
-		out:      make(chan O),
-		stages:   make([]*Stage[any, any], 0),
+		done:   done,
+		out:    make(chan O),
+		stages: make([]*Stage[any, any], 0),
 	}
 }
 
@@ -64,9 +63,8 @@ func NewPipeline[I, O any](done <-chan struct{}, consumer ConsumerFunc[O]) *Pipe
 //
 // Internally this function simply calls NewPipeline and then Consumes in
 // sequence, so Pipelines created in both ways are exactly equivalent.
-func NewPipelineWithProducer[I, O any](done <-chan struct{},
-	consumer ConsumerFunc[O], producer Producer[I]) *Pipeline[I, O] {
-	pipeline := NewPipeline[I](done, consumer)
+func NewPipelineWithProducer[I, O any](done <-chan struct{}, producer Producer[I]) *Pipeline[I, O] {
+	pipeline := NewPipeline[I, O](done)
 	pipeline.Consumes(producer)
 
 	return pipeline
@@ -152,6 +150,17 @@ func (p *Pipeline[I, O]) Produces() (Producer[O], error) {
 		}
 	}()
 
-	p.consumer(p.out)
+	if p.consumer != nil {
+		p.consumer(p.out)
+	}
 	return p.out, nil
+}
+
+// WithConsumer sets the consumer of the pipeline.
+//
+// Please read the package level documentation for different approaches
+// of consuming the result of a pipeline and their comparisons.
+func (p *Pipeline[I, O]) WithConsumer(consumer ConsumerFunc[O]) *Pipeline[I, O] {
+	p.consumer = consumer
+	return p
 }
