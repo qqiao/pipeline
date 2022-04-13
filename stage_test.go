@@ -33,7 +33,7 @@ func ExampleStage_Start() {
 		return in * in
 	}
 
-	stage, err := pipeline.NewStage[int, int](done, 10, input, sq)
+	stage, err := pipeline.NewStage(done, 10, input, sq)
 	if err != nil {
 		log.Panicf("Error creating stage: %v", err)
 	}
@@ -73,7 +73,7 @@ func ExampleStage_Start_ordered() {
 		}
 	}
 
-	stage, err := pipeline.NewStage[OrderedEntry, OrderedEntry](done, 10, input, sq)
+	stage, err := pipeline.NewStage(done, 10, input, sq)
 	if err != nil {
 		log.Panicf("Error creating stage: %v", err)
 	}
@@ -106,7 +106,7 @@ func TestStage_Start(t *testing.T) {
 			input := make(chan int)
 
 			// Marking a stage with only 1 worker
-			stage, err := pipeline.NewStage[int, int](done, 1, input, func(in int) int {
+			stage, err := pipeline.NewStage(done, 1, input, func(in int) int {
 				return in * in
 			})
 			if err != nil {

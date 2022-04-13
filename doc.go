@@ -79,9 +79,9 @@ simplicity reasons.
 
 Chaining Pipelines
 
-A Pipeline also has a set of APIs to make Pipeline chaining straight-forward.
+A Pipeline also has a set of APIs to make pipeline chaining straight-forward.
 While connecting multiple pipelines will produce identical results as a single
-Pipeline with all the constituent stages, there are advantages of having
+pipeline with all the constituent stages, there are advantages of having
 composable pipelines. The main advantage of making pipelines composable is so
 that pipelines from different authors and libraries can be easily re-used.
 
@@ -89,11 +89,12 @@ Without the ability to directly connect pipelines, authors would need to
 explicitly create a Stage instance for each stage of their Pipeline, and make
 them public, instead of allowing the Pipeline's AddStage API to do it behind
 the scenes automatically. More ever, users will also need to ensure that these
-stages are added to their own Pipeline in the correct order.
+stages are added to their own pipeline in the correct order.
 
 With composable pipelines, this is no longer an issue. A Pipeline can be made
-a producer of another Pipeline with the AsProducer method. Or directly consume
-the result of another Pipeline with the AsConsumer method.
+a producer of another Pipeline by passing the return value of the Produces
+function. A pipeline can also directly consume the result of another Pipeline
+with the Consumes method.
 
 Examples of composing pipelines can be found in the example section of both
 the AsProducer and AsConsumer section.

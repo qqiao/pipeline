@@ -21,7 +21,7 @@ import (
 	"github.com/qqiao/pipeline"
 )
 
-func ExamplePipeline_Start() {
+func ExamplePipeline_Produces() {
 	done := make(chan struct{})
 	producer := make(chan int)
 	go func() {
@@ -38,8 +38,8 @@ func ExamplePipeline_Start() {
 		i := in.(int)
 		return i * i
 	}
-	p, err := pipeline.NewPipeline[int, int](done, producer,
-		consumer).AddStage(10, sq)
+	p, err := pipeline.NewPipeline[int](done, consumer).AddStage(10, sq)
+	p.Consumes(producer)
 	if err != nil {
 		log.Fatalf("Unable to add stage: %v", err)
 	}

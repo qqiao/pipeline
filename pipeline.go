@@ -30,15 +30,21 @@ type Pipeline[I, O any] struct {
 	stages   []*Stage[any, any]
 }
 
-func NewPipeline[I, O any](done <-chan struct{}, producer Producer[I],
-	consumer ConsumerFunc[O]) *Pipeline[I, O] {
+func NewPipeline[I, O any](done <-chan struct{}, consumer ConsumerFunc[O]) *Pipeline[I, O] {
 	return &Pipeline[I, O]{
 		consumer: consumer,
 		done:     done,
 		out:      make(chan O),
-		producer: producer,
 		stages:   make([]*Stage[any, any], 0),
 	}
+}
+
+func NewPipelineWithProducer[I, O any](done <-chan struct{},
+	consumer ConsumerFunc[O], producer Producer[I]) *Pipeline[I, O] {
+	pipeline := NewPipeline[I](done, consumer)
+	pipeline.Consumes(producer)
+
+	return pipeline
 }
 
 func (p *Pipeline[I, O]) AddStage(workerPoolSize int,
@@ -69,7 +75,7 @@ func (p *Pipeline[I, O]) AddStage(workerPoolSize int,
 		producerFunc = p.stages[len(p.stages)-1].Start
 	}
 
-	stage, err := NewStage[any, any](p.done, workerPoolSize, producerFunc(), worker)
+	stage, err := NewStage(p.done, workerPoolSize, producerFunc(), worker)
 	if err != nil {
 		return nil, err
 	}
