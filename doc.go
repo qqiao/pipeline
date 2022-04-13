@@ -50,6 +50,21 @@ sent into is also the definition of a Producer, you can consider a ConsumerFunc
 as this:
     type ConsumerFunc[I any] func(Producer[I])
 
+There are multiple ways of consuming the output of a pipeline.
+
+1. Create a Consumer, and have the Consumes function take the returned channel
+of a pipeline. When we chain pipelines, this is the most effortless way.
+
+2. Create a ConsumerFunc, pass it to the pipeline using the WithConsumer
+method. The advantage of consuming the pipeline results this way is that
+the ConsumerFunc can be easily written and unit tested without even needing
+a pipeline.
+
+3. Directly taking the returned channel of the Produces method and reading from
+it. This approach requires the least code to be written, but users should use
+the 2nd approach instead of this one as much as possible as the 2nd approach
+encourages more modular and testable code to be written.
+
 More advanced uses of the Consumer and Producer pattern will be discussed
 further in the Chaining Pipelines section.
 
