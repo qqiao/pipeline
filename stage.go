@@ -19,10 +19,17 @@ import (
 	"sync"
 )
 
+// Errors for when the stage is in a invalid state
 var (
 	ErrInvalidWorkerPoolSize = errors.New("invalid worker pool size")
 )
 
+// Worker represent a unit of work.
+//
+// Workers are simple functions that takes an input and returns an output. The
+// Stage will take care of parallelizing workers and combining the results.
+// Since multiple Worker instances will be created, Worker functions are
+// expected to be thread-safe to prevent any unpredictable results.
 type Worker[I, O any] func(I) O
 
 // Stage represents a single stage in the Pipeline.
@@ -67,7 +74,7 @@ func NewStage[I, O any](done <-chan struct{}, workerPoolSize int,
 	}, nil
 }
 
-// Start method starts the processing of the stage, and returns a Producer of
+// Produces method starts the processing of the stage, and returns a Producer of
 // the output type of the current stage.
 //
 // This method is responsible for creating the worker pool, distributing work
@@ -83,7 +90,7 @@ func NewStage[I, O any](done <-chan struct{}, workerPoolSize int,
 // Please also note that order is NOT guaranteed by the Stage. That is, results
 // could come out of the channel in different order from they were read in the
 // input channel.
-func (s *Stage[I, O]) Start() Producer[O] {
+func (s *Stage[I, O]) Produces() Producer[O] {
 	workerIn := make(chan I)
 	cs := make(chan (chan O))
 	go func() {

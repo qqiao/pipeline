@@ -38,7 +38,7 @@ type Pipeline[I, O any] struct {
 	stages   []*Stage[any, any]
 }
 
-// Errors for invalid pipeline states
+// Errors for invalid pipeline states.
 var (
 	ErrNoProducer = errors.New("no producer")
 	ErrNoStage    = errors.New("no stage")
@@ -59,6 +59,11 @@ func NewPipeline[I, O any](done <-chan struct{}, consumer ConsumerFunc[O]) *Pipe
 	}
 }
 
+// NewPipelineWithProducer creates a pipeline with the done channel and
+// consumer function and the producer given.
+//
+// Internally this function simply calls NewPipeline and then Consumes in
+// sequence, so Pipelines created in both ways are exactly equivalent.
 func NewPipelineWithProducer[I, O any](done <-chan struct{},
 	consumer ConsumerFunc[O], producer Producer[I]) *Pipeline[I, O] {
 	pipeline := NewPipeline[I](done, consumer)
@@ -67,6 +72,12 @@ func NewPipelineWithProducer[I, O any](done <-chan struct{},
 	return pipeline
 }
 
+// AddStage adds a stage to the pipeline.
+//
+// Internally, this method creates a Stage instance and adds it to the end of
+// the list of stages of the current pipeline.
+//
+// This method throws a ErrNoProducer if the pipeline does not have a producer
 func (p *Pipeline[I, O]) AddStage(workerPoolSize int,
 	worker Worker[any, any]) (*Pipeline[I, O], error) {
 	if p.producer == nil {
@@ -95,7 +106,7 @@ func (p *Pipeline[I, O]) AddStage(workerPoolSize int,
 			return out
 		}
 	} else {
-		producerFunc = p.stages[len(p.stages)-1].Start
+		producerFunc = p.stages[len(p.stages)-1].Produces
 	}
 
 	stage, err := NewStage(p.done, workerPoolSize, producerFunc(), worker)
@@ -107,10 +118,15 @@ func (p *Pipeline[I, O]) AddStage(workerPoolSize int,
 	return p, nil
 }
 
+// Consumes sets the producer of this pipeline.
 func (p *Pipeline[I, O]) Consumes(producer Producer[I]) {
 	p.producer = producer
 }
 
+// Produces returns a channel into which results of the pipeline will be sent.
+//
+// This method throws a ErrNoStage if the current pipeline does not have any
+// stages.
 func (p *Pipeline[I, O]) Produces() (Producer[O], error) {
 	if len(p.stages) < 1 {
 		return nil, ErrNoStage
@@ -118,7 +134,7 @@ func (p *Pipeline[I, O]) Produces() (Producer[O], error) {
 
 	var stageOut <-chan any
 	for _, stage := range p.stages {
-		stageOut = stage.Start()
+		stageOut = stage.Produces()
 	}
 
 	go func() {

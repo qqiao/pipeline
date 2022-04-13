@@ -24,7 +24,7 @@ import (
 	"github.com/qqiao/pipeline"
 )
 
-func ExampleStage_Start() {
+func ExampleStage_Produces() {
 	done := make(chan struct{})
 	input := make(chan int)
 
@@ -38,7 +38,7 @@ func ExampleStage_Start() {
 		log.Panicf("Error creating stage: %v", err)
 	}
 
-	output := stage.Start()
+	output := stage.Produces()
 	input <- 2
 	input <- 3
 	close(input)
@@ -53,7 +53,7 @@ func ExampleStage_Start() {
 	// Output: [4 9]
 }
 
-func ExampleStage_Start_ordered() {
+func ExampleStage_Produces_ordered() {
 	type OrderedEntry struct {
 		Order int
 		Value int
@@ -78,7 +78,7 @@ func ExampleStage_Start_ordered() {
 		log.Panicf("Error creating stage: %v", err)
 	}
 
-	output := stage.Start()
+	output := stage.Produces()
 	input <- OrderedEntry{0, 2}
 	input <- OrderedEntry{1, 3}
 	close(input)
@@ -97,7 +97,7 @@ func ExampleStage_Start_ordered() {
 	// Output: [{0 4} {1 9}]
 }
 
-func TestStage_Start(t *testing.T) {
+func TestStage_Produces(t *testing.T) {
 	expected := []int{1, 4, 9, 16, 25,
 		36, 49, 64, 81, 100}
 	t.Run("Should be able to process more data than worker count",
@@ -113,7 +113,7 @@ func TestStage_Start(t *testing.T) {
 				log.Panicf("Error creating stage: %v", err)
 			}
 
-			output := stage.Start()
+			output := stage.Produces()
 
 			go func() {
 				defer close(input)

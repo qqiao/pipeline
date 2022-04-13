@@ -38,8 +38,9 @@ func ExamplePipeline_Consumes() {
 		i := in.(int)
 		return i * i
 	}
-	p, err := pipeline.NewPipeline[int](done, consumer).AddStage(10, sq)
+	p := pipeline.NewPipeline[int](done, consumer)
 	p.Consumes(producer)
+	_, err := p.AddStage(10, sq)
 	if err != nil {
 		log.Fatalf("Unable to add stage: %v", err)
 	}
@@ -65,7 +66,8 @@ func ExamplePipeline_Produces() {
 		i := in.(int)
 		return i * i
 	}
-	p, err := pipeline.NewPipelineWithProducer(done, consumer, producer).AddStage(10, sq)
+	p, err := pipeline.NewPipelineWithProducer(done, consumer,
+		producer).AddStage(10, sq)
 	if err != nil {
 		log.Fatalf("Unable to add stage: %v", err)
 	}
