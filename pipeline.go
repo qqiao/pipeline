@@ -44,12 +44,11 @@ var (
 	ErrNoStage    = errors.New("no stage")
 )
 
-// NewPipeline creates a pipeline with the done channel and consumer function
-// given.
+// NewPipeline creates a pipeline with the done channel.
 //
-// Please note that pipelines created this way does not have a producer channel,
-// thus calling AddStage before calling Consumes will result in AddStage
-// throwing an ErrNoProducer.
+// Please note that pipelines created this way does not have a producer
+// channel, thus calling AddStage before calling Consumes will result in
+// AddStage throwing an ErrNoProducer.
 func NewPipeline[I, O any](done <-chan struct{}) *Pipeline[I, O] {
 	return &Pipeline[I, O]{
 		done:   done,
@@ -58,11 +57,15 @@ func NewPipeline[I, O any](done <-chan struct{}) *Pipeline[I, O] {
 	}
 }
 
-// NewPipelineWithProducer creates a pipeline with the done channel and
-// consumer function and the producer given.
+// NewPipelineWithProducer creates a pipeline with the done channel and the
+// producer given.
 //
-// Internally this function simply calls NewPipeline and then Consumes in
-// sequence, so Pipelines created in both ways are exactly equivalent.
+// Internally this function simply calls NewPipeline and then the Consumes
+// method on the returned pipeline in sequence, this method is exactly
+// equivalent to the following code:
+//
+//     pipeline := NewPipeline[I, O](done)
+//     pipeline.Consumes(producer)
 func NewPipelineWithProducer[I, O any](done <-chan struct{}, producer Producer[I]) *Pipeline[I, O] {
 	pipeline := NewPipeline[I, O](done)
 	pipeline.Consumes(producer)
@@ -75,7 +78,7 @@ func NewPipelineWithProducer[I, O any](done <-chan struct{}, producer Producer[I
 // Internally, this method creates a Stage instance and adds it to the end of
 // the list of stages of the current pipeline.
 //
-// This method throws a ErrNoProducer if the pipeline does not have a producer
+// This method throws a ErrNoProducer if the pipeline does not have a producer.
 func (p *Pipeline[I, O]) AddStage(workerPoolSize int,
 	worker Worker[any, any]) (*Pipeline[I, O], error) {
 	if p.producer == nil {

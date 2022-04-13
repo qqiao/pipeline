@@ -123,19 +123,23 @@ func (s *Stage[I, O]) Produces() Producer[O] {
 			workerIn <- input
 		}
 	}()
-	go s.merge(s.done, cs)
+	go s.merge(cs)
 	return s.out
 }
 
-func (s *Stage[I, O]) merge(done <-chan struct{}, cs chan (chan O)) {
+func (s *Stage[I, O]) merge(cs chan (chan O)) {
 	var wg sync.WaitGroup
 
 	output := func(in <-chan O) {
 		defer wg.Done()
-		for o := range in {
+		for {
 			select {
-			case s.out <- o:
-			case <-done:
+			case o, ok := <-in:
+				if !ok {
+					return
+				}
+				s.out <- o
+			case <-s.done:
 				return
 			}
 		}
