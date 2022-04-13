@@ -43,14 +43,13 @@ func ExampleStage_Produces() {
 	input <- 3
 	close(input)
 
-	var results []int
 	for v := range output {
-		results = append(results, v)
+		fmt.Println(v)
 	}
-	sort.Ints(results)
-	fmt.Printf("%v", results)
 
-	// Output: [4 9]
+	// Unordered Output:
+	// 4
+	// 9
 }
 
 func ExampleStage_Produces_ordered() {

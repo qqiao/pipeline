@@ -17,6 +17,7 @@ package pipeline_test
 import (
 	"fmt"
 	"log"
+	"testing"
 
 	"github.com/qqiao/pipeline"
 )
@@ -33,6 +34,7 @@ func ExamplePipeline_Consumes() {
 	go func() {
 		defer close(producer)
 		producer <- 2
+		producer <- 3
 	}()
 
 	sq := func(in any) any {
@@ -53,7 +55,9 @@ func ExamplePipeline_Consumes() {
 		log.Fatalf("Unable to run pipeline")
 	}
 
-	// Output: 4
+	// Unordered Output:
+	// 4
+	// 9
 }
 
 func ExamplePipeline_Produces() {
@@ -68,6 +72,7 @@ func ExamplePipeline_Produces() {
 	go func() {
 		defer close(producer)
 		producer <- 2
+		producer <- 3
 	}()
 
 	sq := func(in any) any {
@@ -87,7 +92,9 @@ func ExamplePipeline_Produces() {
 
 	consumer(out)
 
-	// Output: 4
+	// Unordered Output:
+	// 4
+	// 9
 }
 
 func ExamplePipeline_Produces_chaining() {
@@ -104,6 +111,7 @@ func ExamplePipeline_Produces_chaining() {
 	go func() {
 		defer close(producer)
 		producer <- 2
+		producer <- 3
 	}()
 
 	sq := func(in any) any {
@@ -135,5 +143,19 @@ func ExamplePipeline_Produces_chaining() {
 		log.Fatalf("Unable to run pipeline")
 	}
 
-	// output: 64
+	// Unordered Output:
+	// 64
+	// 729
+}
+
+func TestPipeline_AddStage(t *testing.T) {
+	t.Run("Should return error when no producer is present", func(t *testing.T) {
+		done := make(chan struct{})
+		p := pipeline.NewPipeline[int, int](done)
+		if _, err := p.AddStage(1, func(input any) any {
+			return input
+		}); err == nil {
+			t.Error("Expecting ErrNoProducer, got nil")
+		}
+	})
 }
