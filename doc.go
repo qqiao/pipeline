@@ -112,7 +112,7 @@ a producer of another Pipeline by passing the return value of the Produces
 function. A pipeline can also directly consume the result of another Pipeline
 with the Consumes method.
 
-Examples of composing pipelines can be found in the example of the Consumes
+Examples of composing pipelines can be found in the example of the Produces
 method.
 
 */
