@@ -21,8 +21,8 @@ Background
 This Pipeline concurrency pattern is inspired by the blog post from the Go dev
 team here: https://go.dev/blog/pipelines.
 
-This library takes the overall idea of the blog post and made it easier to
-use by implementing it with support of Generics introduced in Go 1.18.
+This library takes the overall idea of the blog post and makes it easier to
+use by implementing it with support of generics, introduced in Go 1.18.
 
 Additional care has also been taken in the design of the API to ensure that both
 connecting multiple pipelines and creating multi-stage pipelines are as easy
@@ -30,19 +30,24 @@ as possible.
 
 Basic Concepts
 
-To better understand how a pipeline works and more importantly, how it will
-benefit you, we start by taking a look at the components that make up a
-pipeline.
+To better understand how a pipeline works we start by taking a look at the
+components that make up a pipeline.
 
-A Producer is a channel from which a Pipeline gets its inputs from.
+A Producer is a channel from which a Pipeline gets its inputs from, a pipeline
+will continue to read from the producer channel until it is closed or anything
+is sent into the done channel, more on that later.
 
-A Consumer is struct that consumes a Producer.
+A Consumer is any struct that consumes a Producer.
+
+Since a pipeline itself is obviously a consumer, and a pipeline can be
+considered a producer since it returns a channel where the results are sent
+into, it makes chaining pipelines natural.
 
 A ConsumerFunc, which is a function that takes a channel into which the results
 of the Pipeline are sent as its sole argument. Since a channel where values are
 sent into is also the definition of a Producer, you can consider a ConsumerFunc
 as this:
-    type ConsumerFunc[I] func(Producer[O])
+    type ConsumerFunc[I] func(Producer[I])
 
 More advanced uses of the Consumer and Producer pattern will be discussed
 further in the Chaining Pipelines section.
@@ -55,7 +60,22 @@ final collation of the results are done by the stage. Therefore the NewStage
 function requires additional parameters to control the multiplexing behaviours
 of the stage.
 
+Each stage must have a Worker function. A worker is just a simple function that
+takes an input and returns an output. The Stage will take care of parallelizing
+workers and combining the results. Since multiple Worker instances will be
+created, Worker functions are expected to be thread-safe to prevent any
+unpredictable results.
+
 The workerPoolSize parameter defines the upper bound of the number of workers.
+
+All Worker goroutines are lazily created. A new worker goroutine is created
+when a new input is read from the producer, until workerPoolSize is reached.
+Given that goroutines are cheap to create, in order to keep the implementation
+as simple as possible, no worker re-use will happen in this growing phase.
+
+Once workerPoolSize is reached, worker goroutines will compete for the inputs
+from the producer until the pipeline is done. The pool will not auto shrink for
+simplicity reasons.
 
 Chaining Pipelines
 
