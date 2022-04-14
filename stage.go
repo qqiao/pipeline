@@ -102,29 +102,37 @@ func (s *Stage[I, O]) Produces() Producer[O] {
 		defer close(cs)
 
 		workerCount := 0
-		for input := range s.in {
-			if workerCount < s.workerPoolSize {
-				workerOut := make(chan O)
-				go func() {
-					defer close(workerOut)
-					for {
-						select {
-						case i, ok := <-workerIn:
-							if !ok {
+		for {
+			select {
+			case input, ok := <-s.in:
+				if !ok {
+					return
+				}
+				if workerCount < s.workerPoolSize {
+					workerOut := make(chan O)
+					go func() {
+						defer close(workerOut)
+						for {
+							select {
+							case i, ok := <-workerIn:
+								if !ok {
+									return
+								}
+								workerOut <- s.worker(i)
+							case <-s.done:
 								return
 							}
-							workerOut <- s.worker(i)
-						case <-s.done:
-							return
 						}
-					}
-				}()
+					}()
 
-				cs <- workerOut
-				workerCount++
+					cs <- workerOut
+					workerCount++
+				}
+
+				workerIn <- input
+			case <-s.done:
+				return
 			}
-
-			workerIn <- input
 		}
 	}()
 	go s.merge(cs)
@@ -143,17 +151,25 @@ func (s *Stage[I, O]) merge(cs chan (chan O)) {
 					return
 				}
 				s.out <- o
-			case <-s.done:
-				return
 			}
 		}
 	}
 
 	go func() {
 		defer close(s.out)
-		for c := range cs {
-			wg.Add(1)
-			go output(c)
+		for stop := false; !stop; {
+			select {
+			case c, ok := <-cs:
+				if !ok {
+					stop = true
+				} else {
+					wg.Add(1)
+					go output(c)
+				}
+			case <-s.done:
+				stop = true
+			}
+
 		}
 		wg.Wait()
 	}()
