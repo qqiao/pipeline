@@ -93,6 +93,10 @@ Once workerPoolSize is reached, worker goroutines will compete for the inputs
 from the producer until the pipeline is done. The pool will not auto shrink for
 simplicity reasons.
 
+The bufferSize parameter defines the buffer size of the output channel. This
+allows the processing to start without having to block wait on the consumer to
+start reading.
+
 Chaining Pipelines
 
 A Pipeline also has a set of APIs to make pipeline chaining straight-forward.
@@ -114,6 +118,38 @@ with the Consumes method.
 
 Examples of composing pipelines can be found in the example of the Produces
 method.
+
+Performance Tuning
+
+There are 3 important dials that would help fine tune the performance
+characteristics of a pipeline: the buffer size of the producer, workerPoolSize
+and bufferSize of the stage.
+
+Making the producer a buffered channel and adjusting the buffer size allows
+any code that sends into the producers to execute without having to block wait
+on the pipeline to be ready, which in turn might improve the overall
+performance of the application by allowing more code to actually run in
+parallel.
+
+Similar to making the producer channel a buffered channel, you can also adjust
+the bufferSize of each stage in the pipeline. This is buffer size of the output
+channel. This allows the stage to proceed without having to block wait on the
+consumer being ready. And similar to the effect of having a buffered producer,
+this would potentially allow more code to run in parallel.
+
+The third dial that can affect the performance of a pipeline is the size of the
+worker pool. In theory, if the producer can saturate the worker pool, and the
+consumer can consume all of the output, then the throughput of each stage
+should scale linearly with with the size of the worker. However,  in reallity,
+this scaling is affected by many factors and will almost never simply be
+linear.
+
+Applications are recommended to run benchmarks with real workloads and tweak
+the setting to find the most suitable combination of producer and consumer
+buffer sizes and worker pool sizes.
+
+The Benchmark* methods in stage_test.go offers a good starting point on how
+to write such benchmark test cases.
 
 */
 package pipeline

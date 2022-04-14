@@ -21,6 +21,7 @@ import (
 
 // Errors for when the stage is in a invalid state
 var (
+	ErrInvalidBufferSize     = errors.New("invalid buffer size")
 	ErrInvalidWorkerPoolSize = errors.New("invalid worker pool size")
 )
 
@@ -61,14 +62,17 @@ type Stage[I, O any] struct {
 // This function returns ErrInvalidWorkerPoolSize if workerPoolSize is not at
 // least 1.
 func NewStage[I, O any](done <-chan struct{}, workerPoolSize int,
-	in Producer[I], worker Worker[I, O]) (*Stage[I, O], error) {
+	bufferSize int, in Producer[I], worker Worker[I, O]) (*Stage[I, O], error) {
 	if workerPoolSize < 1 {
 		return nil, ErrInvalidWorkerPoolSize
+	}
+	if bufferSize < 0 {
+		return nil, ErrInvalidBufferSize
 	}
 	return &Stage[I, O]{
 		done:           done,
 		in:             in,
-		out:            make(chan O),
+		out:            make(chan O, bufferSize),
 		workerPoolSize: workerPoolSize,
 		worker:         worker,
 	}, nil

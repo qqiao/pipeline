@@ -79,7 +79,7 @@ func NewPipelineWithProducer[I, O any](done <-chan struct{}, producer Producer[I
 // the list of stages of the current pipeline.
 //
 // This method throws a ErrNoProducer if the pipeline does not have a producer.
-func (p *Pipeline[I, O]) AddStage(workerPoolSize int,
+func (p *Pipeline[I, O]) AddStage(workerPoolSize int, bufferSize int,
 	worker Worker[any, any]) (*Pipeline[I, O], error) {
 	if p.producer == nil {
 		return nil, ErrNoProducer
@@ -110,7 +110,8 @@ func (p *Pipeline[I, O]) AddStage(workerPoolSize int,
 		producerFunc = p.stages[len(p.stages)-1].Produces
 	}
 
-	stage, err := NewStage(p.done, workerPoolSize, producerFunc(), worker)
+	stage, err := NewStage(p.done, workerPoolSize, bufferSize,
+		producerFunc(), worker)
 	if err != nil {
 		return nil, err
 	}

@@ -17,12 +17,147 @@ package pipeline_test
 import (
 	"fmt"
 	"log"
+	"os"
 	"reflect"
 	"sort"
+	"sync"
 	"testing"
 
 	"github.com/qqiao/pipeline"
 )
+
+func build[I, O any](workerPoolSize int, bufferSize int, worker pipeline.Worker[I, O]) (chan struct{}, chan I, *pipeline.Stage[I, O]) {
+	done := make(chan struct{})
+	in := make(chan I)
+
+	stage, err := pipeline.NewStage(done, workerPoolSize, bufferSize, in, worker)
+	if err != nil {
+		log.Fatalf("Unable to create stage. Error: %v", err)
+		os.Exit(1)
+	}
+
+	return done, in, stage
+}
+
+func BenchmarkWorkerPoolSize1BufferSize0(b *testing.B) {
+	_, in, stage := build(1, 0, func(in int) int {
+		return in * in * in
+	})
+
+	var wg sync.WaitGroup
+
+	go func() {
+		for n := 0; n < b.N; n++ {
+			wg.Add(1)
+			in <- n
+		}
+	}()
+
+	out := stage.Produces()
+	go func() {
+		for {
+			select {
+			case _, ok := <-out:
+				if !ok {
+					return
+				} else {
+					wg.Done()
+				}
+			}
+		}
+	}()
+	wg.Wait()
+}
+
+func BenchmarkWorkerPoolSize10BufferSize0(b *testing.B) {
+	_, in, stage := build(10, 0, func(in int) int {
+		return in * in * in
+	})
+
+	var wg sync.WaitGroup
+
+	go func() {
+		for n := 0; n < b.N; n++ {
+			wg.Add(1)
+			in <- n
+		}
+	}()
+
+	out := stage.Produces()
+	go func() {
+		for {
+			select {
+			case _, ok := <-out:
+				if !ok {
+					return
+				} else {
+					wg.Done()
+				}
+			}
+		}
+	}()
+	wg.Wait()
+}
+
+func BenchmarkWorkerPoolSize1BufferSize10(b *testing.B) {
+	_, in, stage := build(1, 10, func(in int) int {
+		return in * in * in
+	})
+
+	var wg sync.WaitGroup
+
+	go func() {
+		for n := 0; n < b.N; n++ {
+			wg.Add(1)
+			in <- n
+		}
+	}()
+
+	out := stage.Produces()
+	go func() {
+		for {
+			select {
+			case _, ok := <-out:
+				if !ok {
+					return
+				} else {
+					wg.Done()
+				}
+			}
+		}
+	}()
+	wg.Wait()
+}
+
+func BenchmarkWorkerPoolSize10BufferSize10(b *testing.B) {
+	_, in, stage := build(10, 10, func(in int) int {
+		return in * in * in
+	})
+
+	var wg sync.WaitGroup
+
+	go func() {
+		for n := 0; n < b.N; n++ {
+			wg.Add(1)
+			in <- n
+		}
+	}()
+
+	out := stage.Produces()
+	go func() {
+		for {
+			select {
+			case _, ok := <-out:
+				if !ok {
+					return
+				} else {
+					wg.Done()
+				}
+			}
+		}
+	}()
+	wg.Wait()
+}
 
 func ExampleStage_Produces() {
 	done := make(chan struct{})
@@ -33,7 +168,7 @@ func ExampleStage_Produces() {
 		return in * in
 	}
 
-	stage, err := pipeline.NewStage(done, 10, input, sq)
+	stage, err := pipeline.NewStage(done, 10, 0, input, sq)
 	if err != nil {
 		log.Panicf("Error creating stage: %v", err)
 	}
@@ -72,7 +207,7 @@ func ExampleStage_Produces_ordered() {
 		}
 	}
 
-	stage, err := pipeline.NewStage(done, 10, input, sq)
+	stage, err := pipeline.NewStage(done, 10, 5, input, sq)
 	if err != nil {
 		log.Panicf("Error creating stage: %v", err)
 	}
@@ -96,16 +231,39 @@ func ExampleStage_Produces_ordered() {
 	// Output: [{0 4} {1 9}]
 }
 
+func TestNewStage(t *testing.T) {
+	done := make(chan struct{})
+	in := make(chan int)
+	worker := func(in int) int {
+		return in
+	}
+
+	t.Run("Should throw ErrInvalidBufferSize", func(t *testing.T) {
+		t.Parallel()
+		if _, err := pipeline.NewStage(done, 10, -1, in, worker); err != pipeline.ErrInvalidBufferSize {
+			t.Errorf("Expected ErrInvalidBufferSize for bufferSize of -1, got nil")
+		}
+	})
+
+	t.Run("Should throw ErrInvalidWorkerPoolSize", func(t *testing.T) {
+		t.Parallel()
+		if _, err := pipeline.NewStage(done, 0, 3, in, worker); err != pipeline.ErrInvalidWorkerPoolSize {
+			t.Errorf("Expected ErrInvalidWorkerPoolSize for workerPoolSize of 0, got nil")
+		}
+	})
+}
+
 func TestStage_Produces(t *testing.T) {
 	expected := []int{1, 4, 9, 16, 25,
 		36, 49, 64, 81, 100}
 	t.Run("Should be able to process more data than worker count",
 		func(t *testing.T) {
+			t.Parallel()
 			done := make(chan struct{})
 			input := make(chan int)
 
 			// Marking a stage with only 1 worker
-			stage, err := pipeline.NewStage(done, 1, input, func(in int) int {
+			stage, err := pipeline.NewStage(done, 1, 0, input, func(in int) int {
 				return in * in
 			})
 			if err != nil {
@@ -130,4 +288,36 @@ func TestStage_Produces(t *testing.T) {
 				t.Errorf("Expected: %v.\nGot: %v", expected, got)
 			}
 		})
+
+	t.Run("Should work consistently with any buffer value", func(t *testing.T) {
+		t.Parallel()
+		done := make(chan struct{})
+		input := make(chan int)
+
+		// Marking a stage with only 1 worker
+		stage, err := pipeline.NewStage(done, 1, 8, input, func(in int) int {
+			return in * in
+		})
+		if err != nil {
+			log.Panicf("Error creating stage: %v", err)
+		}
+
+		output := stage.Produces()
+
+		go func() {
+			defer close(input)
+			for i := 1; i < 11; i++ {
+				input <- i
+			}
+		}()
+
+		var got []int
+		for result := range output {
+			got = append(got, result)
+		}
+		sort.Ints(got)
+		if !reflect.DeepEqual(expected, got) {
+			t.Errorf("Expected: %v.\nGot: %v", expected, got)
+		}
+	})
 }
