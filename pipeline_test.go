@@ -45,7 +45,7 @@ func ExamplePipeline_Consumes() {
 	p.Consumes(producer)
 	p.WithConsumer(consumer)
 
-	_, err := p.AddStage(10, sq)
+	_, err := p.AddStage(10, 0, sq)
 	if err != nil {
 		log.Fatalf("Unable to add stage: %v", err)
 	}
@@ -80,7 +80,7 @@ func ExamplePipeline_Produces() {
 		return i * i
 	}
 	p, err := pipeline.NewPipelineWithProducer[int, int](done,
-		producer).AddStage(10, sq)
+		producer).AddStage(10, 0, sq)
 	if err != nil {
 		log.Fatalf("Unable to add stage: %v", err)
 	}
@@ -119,7 +119,7 @@ func ExamplePipeline_Produces_chaining() {
 		return i * i
 	}
 	p1, err := pipeline.NewPipelineWithProducer[int, int](done,
-		producer).AddStage(10, sq)
+		producer).AddStage(10, 0, sq)
 	if err != nil {
 		log.Fatalf("Unable to add stage: %v", err)
 	}
@@ -135,7 +135,7 @@ func ExamplePipeline_Produces_chaining() {
 	// We chain the output channel of p1 into p2 by using it as the producer of
 	// p2
 	p2, err := pipeline.NewPipelineWithProducer[int, int](done,
-		p1Producer).AddStage(10, cube)
+		p1Producer).AddStage(10, 0, cube)
 	p2.WithConsumer(consumer)
 
 	_, err = p2.Produces()
@@ -152,7 +152,7 @@ func TestPipeline_AddStage(t *testing.T) {
 	t.Run("Should return error when no producer is present", func(t *testing.T) {
 		done := make(chan struct{})
 		p := pipeline.NewPipeline[int, int](done)
-		if _, err := p.AddStage(1, func(input any) any {
+		if _, err := p.AddStage(1, 0, func(input any) any {
 			return input
 		}); err == nil {
 			t.Error("Expecting ErrNoProducer, got nil")
