@@ -22,6 +22,7 @@ import (
 	"sort"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/qqiao/pipeline"
 )
@@ -318,6 +319,42 @@ func TestStage_Produces(t *testing.T) {
 		sort.Ints(got)
 		if !reflect.DeepEqual(expected, got) {
 			t.Errorf("Expected: %v.\nGot: %v", expected, got)
+		}
+	})
+
+	t.Run("Should terminate early when done is closed", func(t *testing.T) {
+		t.Parallel()
+		done := make(chan struct{})
+		in := make(chan int)
+
+		stage, err := pipeline.NewStage(done, 1, 0, in, func(in int) int {
+			return in * in
+		})
+		if err != nil {
+			log.Panicf("Error creating stage: %v", err)
+		}
+
+		output := stage.Produces()
+
+		// We send infinitely many inputs, so if done isn't closed, the
+		// pipeline won't stop, and the test will timeout and fail
+		go func() {
+			for {
+				in <- 1
+			}
+		}()
+
+		// After 2 seconds, we close the done channel, which would terminate
+		// the pipeline
+		go func() {
+			select {
+			case <-time.After(2 * time.Second):
+				close(done)
+			}
+		}()
+
+		// If the close(done) did not work above, the test will dead-lock here
+		for range output {
 		}
 	})
 }

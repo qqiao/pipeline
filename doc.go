@@ -34,21 +34,27 @@ Basic Concepts
 To better understand how a pipeline works we start by taking a look at the
 components that make up a pipeline.
 
-A Producer is a channel from which a Pipeline gets its inputs from, a pipeline
+A Producer is a channel from which a pipeline gets its inputs from, a pipeline
 will continue to read from the producer channel until it is closed or anything
-is sent into the done channel, more on that later.
+is sent into the done channel. More on the done channel later in the Stopping
+Short section.
 
-A Consumer is any struct that consumes a Producer.
+A Consumer is any struct that consumes a Producer. This library provides an
+interface with the definition of a Consumer. Anything that matches the
+signature is implicitly a consumer.
 
-Since a pipeline itself is obviously a consumer, and a pipeline can be
-considered a producer since it returns a channel where the results are sent
-into, it makes chaining pipelines natural.
+Since a pipeline itself is obviously a consumer of some input, and a pipeline
+can be considered a producer since it returns a channel where the results are
+sent into, chaining pipelines is both logically natural and as been made easy
+to do so. We will discuss it in more detail in the Chaining Pipelines section.
 
-A ConsumerFunc, which is a function that takes a channel into which the results
-of the Pipeline are sent as its sole argument. Since a channel where values are
-sent into is also the definition of a Producer, you can consider a ConsumerFunc
-as this:
+A ConsumerFunc, which is a function that takes a channel, into which the
+results of the pipeline are sent, as its sole argument. Since a channel where
+values are sent into is also the definition of a Producer, you can consider a
+ConsumerFunc as this:
     type ConsumerFunc[I any] func(Producer[I])
+
+Consuming a Pipeline
 
 There are multiple ways of consuming the output of a pipeline.
 
@@ -61,16 +67,16 @@ the ConsumerFunc can be easily written and unit tested without even needing
 a pipeline.
 
 3. Directly taking the returned channel of the Produces method and reading from
-it. This approach requires the least code to be written, but users should use
-the 2nd approach instead of this one as much as possible as the 2nd approach
-encourages more modular and testable code to be written.
+it. Although this approach requires the least code to be written, we strongly
+encourage applications to not use this approach and instead use methods 1 and
+2, as those two methods allow modular and unit-testable code to be written.
 
 More advanced uses of the Consumer and Producer pattern will be discussed
 further in the Chaining Pipelines section.
 
 Stages
 
-Stages is heart of the Pipeline. While the API of a stage look extremely
+Stages is heart of the pipeline. While the API of a Stage look extremely
 similar to that of a Pipeline, the actual multiplexing of the workers and the
 final collation of the results are done by the stage. Therefore the NewStage
 function requires additional parameters to control the multiplexing behaviours
@@ -113,11 +119,27 @@ stages are added to their own pipeline in the correct order.
 
 With composable pipelines, this is no longer an issue. A Pipeline can be made
 a producer of another Pipeline by passing the return value of the Produces
-function. A pipeline can also directly consume the result of another Pipeline
+method. A pipeline can also directly consume the result of another Pipeline
 with the Consumes method.
 
 Examples of composing pipelines can be found in the example of the Produces
 method.
+
+Stopping Short
+
+Sometimes it is desirable to stop a pipeline short of its completion. A good
+example would be that if we use a pipeline for a web server, in which case the
+producer channel will stay open for as long as the server runs and will not be
+closed.
+
+However, we still want a way to force shutdown the server, a switch that if
+flicked, would immediately stop the server from accepting new requests and for
+the pipeline to organically end.
+
+This is where the done channel comes in. In the case where the application
+needs to stop the pipeline immediately, it should CLOSE the done channel, and
+the pipeline and all of its stages will stop processing and terminate
+gracefully.
 
 Performance Tuning
 

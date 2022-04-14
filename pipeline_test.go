@@ -18,6 +18,7 @@ import (
 	"fmt"
 	"log"
 	"testing"
+	"time"
 
 	"github.com/qqiao/pipeline"
 )
@@ -146,6 +147,47 @@ func ExamplePipeline_Produces_chaining() {
 	// Unordered Output:
 	// 64
 	// 729
+}
+
+func ExamplePipeline_Produces_stoppingShort() {
+	done := make(chan struct{})
+	producer := make(chan int)
+
+	p, err := pipeline.NewPipelineWithProducer[int, int](done,
+		producer).AddStage(1, 0, func(in any) any {
+		return in
+	})
+	if err != nil {
+		log.Fatalf("Unable to create pipeline: %v", err)
+	}
+
+	// Simulates an infinite input
+	go func() {
+		for {
+			producer <- 1
+		}
+	}()
+
+	// Without this goroutine, the pipeline will simply run on forever
+	// However, by closing the done channel in 2 seconds, we demonstrate that
+	// closing the done channel will stop the pipeline
+	go func() {
+		select {
+		case <-time.After(2 * time.Second):
+			close(done)
+		}
+	}()
+
+	out, err := p.Produces()
+	if err != nil {
+		log.Fatalf("Unable to execute pipeline: %v", err)
+	}
+
+	// This part would infinite loop if we didn't close the done channel
+	for range out {
+	}
+
+	// Output:
 }
 
 func TestPipeline_AddStage(t *testing.T) {
