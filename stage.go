@@ -47,12 +47,16 @@ type Stage[I, O any] struct {
 
 // NewStage creates a new stage with necessary parameters specified.
 //
-// done: done is a ready only channel where if any value is sent into, the
-// stage immediately stops.
+// done: done is a ready only channel that if closed, the stage immediately
+// stops.
 //
 // workerPoolSize: internally, the stage maintains a pool of workers all
 // running in parallel, workerPoolSize specifies the upper bound of the
 // possible number of workers.
+//
+// bufferSize: size of the output buffer. Setting a bufferSize of greater than
+// 0 will make the output channel a buffered channel, which will allow some
+// work to be done in parallel without having to block wait for the consumer.
 //
 // in: channel where input will be read from
 //
@@ -89,7 +93,7 @@ func NewStage[I, O any](done <-chan struct{}, workerPoolSize int,
 //
 // The worker pool also does not shrink, that is, once n workers are created,
 // they will keep on serving until either the stage is explicitly terminated
-// by sending into the done channel, or the in channel is closed.
+// by closing the done channel, or the in channel is closed.
 //
 // Please also note that order is NOT guaranteed by the Stage. That is, results
 // could come out of the channel in different order from they were read in the
@@ -151,26 +155,26 @@ func (s *Stage[I, O]) merge(cs chan (chan O)) {
 					return
 				}
 				s.out <- o
+			case <-s.done:
+				return
 			}
 		}
 	}
 
-	go func() {
-		defer close(s.out)
-		for stop := false; !stop; {
-			select {
-			case c, ok := <-cs:
-				if !ok {
-					stop = true
-				} else {
-					wg.Add(1)
-					go output(c)
-				}
-			case <-s.done:
+	defer close(s.out)
+	for stop := false; !stop; {
+		select {
+		case c, ok := <-cs:
+			if !ok {
 				stop = true
+			} else {
+				wg.Add(1)
+				go output(c)
 			}
-
+		case <-s.done:
+			stop = true
 		}
-		wg.Wait()
-	}()
+
+	}
+	wg.Wait()
 }
