@@ -20,14 +20,14 @@ import (
 	"os"
 	"reflect"
 	"sort"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/qqiao/pipeline"
 )
 
-func build[I, O any](workerPoolSize int, bufferSize int, worker pipeline.Worker[I, O]) (chan struct{}, chan I, *pipeline.Stage[I, O]) {
+func build[I, O any](workerPoolSize int, bufferSize int,
+	worker pipeline.Worker[I, O]) (chan struct{}, chan I, *pipeline.Stage[I, O]) {
 	done := make(chan struct{})
 	in := make(chan I)
 
@@ -45,29 +45,16 @@ func BenchmarkWorkerPoolSize1BufferSize0(b *testing.B) {
 		return in * in * in
 	})
 
-	var wg sync.WaitGroup
-
 	go func() {
 		for n := 0; n < b.N; n++ {
-			wg.Add(1)
 			in <- n
 		}
+		close(in)
 	}()
 
 	out := stage.Produces()
-	go func() {
-		for {
-			select {
-			case _, ok := <-out:
-				if !ok {
-					return
-				} else {
-					wg.Done()
-				}
-			}
-		}
-	}()
-	wg.Wait()
+	for range out {
+	}
 }
 
 func BenchmarkWorkerPoolSize10BufferSize0(b *testing.B) {
@@ -75,29 +62,16 @@ func BenchmarkWorkerPoolSize10BufferSize0(b *testing.B) {
 		return in * in * in
 	})
 
-	var wg sync.WaitGroup
-
 	go func() {
 		for n := 0; n < b.N; n++ {
-			wg.Add(1)
 			in <- n
 		}
+		close(in)
 	}()
 
 	out := stage.Produces()
-	go func() {
-		for {
-			select {
-			case _, ok := <-out:
-				if !ok {
-					return
-				} else {
-					wg.Done()
-				}
-			}
-		}
-	}()
-	wg.Wait()
+	for range out {
+	}
 }
 
 func BenchmarkWorkerPoolSize1BufferSize10(b *testing.B) {
@@ -105,29 +79,16 @@ func BenchmarkWorkerPoolSize1BufferSize10(b *testing.B) {
 		return in * in * in
 	})
 
-	var wg sync.WaitGroup
-
 	go func() {
 		for n := 0; n < b.N; n++ {
-			wg.Add(1)
 			in <- n
 		}
+		close(in)
 	}()
 
 	out := stage.Produces()
-	go func() {
-		for {
-			select {
-			case _, ok := <-out:
-				if !ok {
-					return
-				} else {
-					wg.Done()
-				}
-			}
-		}
-	}()
-	wg.Wait()
+	for range out {
+	}
 }
 
 func BenchmarkWorkerPoolSize10BufferSize10(b *testing.B) {
@@ -135,29 +96,16 @@ func BenchmarkWorkerPoolSize10BufferSize10(b *testing.B) {
 		return in * in * in
 	})
 
-	var wg sync.WaitGroup
-
 	go func() {
 		for n := 0; n < b.N; n++ {
-			wg.Add(1)
 			in <- n
 		}
+		close(in)
 	}()
 
 	out := stage.Produces()
-	go func() {
-		for {
-			select {
-			case _, ok := <-out:
-				if !ok {
-					return
-				} else {
-					wg.Done()
-				}
-			}
-		}
-	}()
-	wg.Wait()
+	for range out {
+	}
 }
 
 func ExampleStage_Produces() {
