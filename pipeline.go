@@ -14,7 +14,10 @@
 
 package pipeline // import "github.com/qqiao/pipeline"
 
-import "errors"
+import (
+	"context"
+	"errors"
+)
 
 // Consumer is an interface that wraps the Consume method.
 type Consumer[I any] interface {
@@ -32,7 +35,6 @@ type Producer[O any] <-chan O
 // Pipeline represents data processing Pipeline.
 type Pipeline[I, O any] struct {
 	consumer ConsumerFunc[O]
-	done     <-chan struct{}
 	out      chan O
 	producer Producer[I]
 	stages   []*Stage[any, any]
@@ -44,32 +46,29 @@ var (
 	ErrNoStage    = errors.New("no stage")
 )
 
-// NewPipeline creates a pipeline with the done channel.
+// NewPipeline creates a pipeline.
 //
 // Please note that pipelines created this way does not have a producer
 // channel, thus calling AddStage before calling Consumes will result in
 // AddStage throwing an ErrNoProducer.
-func NewPipeline[I, O any](done <-chan struct{}) *Pipeline[I, O] {
+func NewPipeline[I, O any]() *Pipeline[I, O] {
 	return &Pipeline[I, O]{
-		done:   done,
 		out:    make(chan O),
 		stages: make([]*Stage[any, any], 0),
 	}
 }
 
-// NewPipelineWithProducer creates a pipeline with the done channel and the
-// producer given.
+// NewPipelineWithProducer creates a pipeline with the producer given.
 //
 // Internally this function simply calls NewPipeline and then the Consumes
 // method on the returned pipeline in sequence, this method is exactly
 // equivalent to the following code:
 //
-//     pipeline := NewPipeline[I, O](done)
+//     pipeline := NewPipeline[I, O]()
 //     pipeline.Consumes(producer)
-func NewPipelineWithProducer[I, O any](done <-chan struct{}, producer Producer[I]) *Pipeline[I, O] {
-	pipeline := NewPipeline[I, O](done)
+func NewPipelineWithProducer[I, O any](producer Producer[I]) *Pipeline[I, O] {
+	pipeline := NewPipeline[I, O]()
 	pipeline.Consumes(producer)
-
 	return pipeline
 }
 
@@ -91,26 +90,17 @@ func (p *Pipeline[I, O]) AddStage(workerPoolSize int, bufferSize int,
 
 			go func() {
 				defer close(out)
-				for {
-					select {
-					case v, ok := <-p.producer:
-						if !ok {
-							return
-						}
-						out <- v
-					case <-p.done:
-						return
-					}
+				for v := range p.producer {
+					out <- v
 				}
 			}()
-
 			return out
 		}
 	} else {
 		producerFunc = p.stages[len(p.stages)-1].Produces
 	}
 
-	stage, err := NewStage(p.done, workerPoolSize, bufferSize,
+	stage, err := NewStage(workerPoolSize, bufferSize,
 		producerFunc(), worker)
 	if err != nil {
 		return nil, err
@@ -134,9 +124,15 @@ func (p *Pipeline[I, O]) Produces() (Producer[O], error) {
 		return nil, ErrNoStage
 	}
 
+	return p.out, nil
+}
+
+// Start method starts the processing of the pipeline.
+func (p *Pipeline[I, O]) Start(ctx context.Context) {
 	var stageOut <-chan any
 	for _, stage := range p.stages {
 		stageOut = stage.Produces()
+		stage.Start(ctx)
 	}
 
 	go func() {
@@ -148,7 +144,7 @@ func (p *Pipeline[I, O]) Produces() (Producer[O], error) {
 					return
 				}
 				p.out <- v.(O)
-			case <-p.done:
+			case <-ctx.Done():
 				return
 			}
 		}
@@ -157,7 +153,6 @@ func (p *Pipeline[I, O]) Produces() (Producer[O], error) {
 	if p.consumer != nil {
 		p.consumer(p.out)
 	}
-	return p.out, nil
 }
 
 // WithConsumer sets the consumer of the pipeline.

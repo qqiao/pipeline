@@ -35,9 +35,9 @@ To better understand how a pipeline works we start by taking a look at the
 components that make up a pipeline.
 
 A Producer is a channel from which a pipeline gets its inputs from, a pipeline
-will continue to read from the producer channel until it is closed or anything
-is sent into the done channel. More on the done channel later in the Stopping
-Short section.
+will continue to read from the producer channel until it is closed or the
+context is cancelled . More on the cancellation of the context later in the
+Stopping Short section.
 
 A Consumer is any struct that consumes a Producer. This library provides an
 interface with the definition of a Consumer. Anything that matches the
@@ -136,8 +136,8 @@ However, we still want a way to force shutdown the server, a switch that if
 flicked, would immediately stop the server from accepting new requests and for
 the pipeline to organically end.
 
-This is where the done channel comes in. In the case where the application
-needs to stop the pipeline immediately, it should CLOSE the done channel, and
+This is where the context comes in. In the case where the application
+needs to stop the pipeline immediately, it should cancel the context, and
 the pipeline and all of its stages will stop processing and terminate
 gracefully.
 
