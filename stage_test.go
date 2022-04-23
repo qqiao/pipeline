@@ -15,6 +15,7 @@
 package pipeline_test
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -27,21 +28,20 @@ import (
 )
 
 func build[I, O any](workerPoolSize int, bufferSize int,
-	worker pipeline.Worker[I, O]) (chan struct{}, chan I, *pipeline.Stage[I, O]) {
-	done := make(chan struct{})
+	worker pipeline.Worker[I, O]) (chan I, *pipeline.Stage[I, O]) {
 	in := make(chan I)
 
-	stage, err := pipeline.NewStage(done, workerPoolSize, bufferSize, in, worker)
+	stage, err := pipeline.NewStage(workerPoolSize, bufferSize, in, worker)
 	if err != nil {
 		log.Fatalf("Unable to create stage. Error: %v", err)
 		os.Exit(1)
 	}
 
-	return done, in, stage
+	return in, stage
 }
 
 func BenchmarkWorkerPoolSize1BufferSize0(b *testing.B) {
-	_, in, stage := build(1, 0, func(in int) int {
+	in, stage := build(1, 0, func(in int) int {
 		return in * in * in
 	})
 
@@ -53,12 +53,13 @@ func BenchmarkWorkerPoolSize1BufferSize0(b *testing.B) {
 	}()
 
 	out := stage.Produces()
+	stage.Start(context.Background())
 	for range out {
 	}
 }
 
 func BenchmarkWorkerPoolSize10BufferSize0(b *testing.B) {
-	_, in, stage := build(10, 0, func(in int) int {
+	in, stage := build(10, 0, func(in int) int {
 		return in * in * in
 	})
 
@@ -70,12 +71,13 @@ func BenchmarkWorkerPoolSize10BufferSize0(b *testing.B) {
 	}()
 
 	out := stage.Produces()
+	stage.Start(context.Background())
 	for range out {
 	}
 }
 
 func BenchmarkWorkerPoolSize1BufferSize10(b *testing.B) {
-	_, in, stage := build(1, 10, func(in int) int {
+	in, stage := build(1, 10, func(in int) int {
 		return in * in * in
 	})
 
@@ -87,12 +89,13 @@ func BenchmarkWorkerPoolSize1BufferSize10(b *testing.B) {
 	}()
 
 	out := stage.Produces()
+	stage.Start(context.Background())
 	for range out {
 	}
 }
 
 func BenchmarkWorkerPoolSize10BufferSize10(b *testing.B) {
-	_, in, stage := build(10, 10, func(in int) int {
+	in, stage := build(10, 10, func(in int) int {
 		return in * in * in
 	})
 
@@ -104,12 +107,12 @@ func BenchmarkWorkerPoolSize10BufferSize10(b *testing.B) {
 	}()
 
 	out := stage.Produces()
+	stage.Start(context.Background())
 	for range out {
 	}
 }
 
 func ExampleStage_Produces() {
-	done := make(chan struct{})
 	input := make(chan int)
 
 	// sq takes an integer and returns the square of that integer
@@ -117,12 +120,13 @@ func ExampleStage_Produces() {
 		return in * in
 	}
 
-	stage, err := pipeline.NewStage(done, 10, 0, input, sq)
+	stage, err := pipeline.NewStage(10, 0, input, sq)
 	if err != nil {
 		log.Panicf("Error creating stage: %v", err)
 	}
 
 	output := stage.Produces()
+	stage.Start(context.Background())
 	input <- 2
 	input <- 3
 	close(input)
@@ -141,7 +145,6 @@ func ExampleStage_Produces_ordered() {
 		Order int
 		Value int
 	}
-	done := make(chan struct{})
 	input := make(chan OrderedEntry)
 
 	// sq takes an integer and returns the square of that integer
@@ -156,12 +159,13 @@ func ExampleStage_Produces_ordered() {
 		}
 	}
 
-	stage, err := pipeline.NewStage(done, 10, 5, input, sq)
+	stage, err := pipeline.NewStage(10, 5, input, sq)
 	if err != nil {
 		log.Panicf("Error creating stage: %v", err)
 	}
 
 	output := stage.Produces()
+	stage.Start(context.Background())
 	input <- OrderedEntry{0, 2}
 	input <- OrderedEntry{1, 3}
 	close(input)
@@ -181,7 +185,6 @@ func ExampleStage_Produces_ordered() {
 }
 
 func TestNewStage(t *testing.T) {
-	done := make(chan struct{})
 	in := make(chan int)
 	worker := func(in int) int {
 		return in
@@ -189,14 +192,14 @@ func TestNewStage(t *testing.T) {
 
 	t.Run("Should throw ErrInvalidBufferSize", func(t *testing.T) {
 		t.Parallel()
-		if _, err := pipeline.NewStage(done, 10, -1, in, worker); err != pipeline.ErrInvalidBufferSize {
+		if _, err := pipeline.NewStage(10, -1, in, worker); err != pipeline.ErrInvalidBufferSize {
 			t.Errorf("Expected ErrInvalidBufferSize for bufferSize of -1, got nil")
 		}
 	})
 
 	t.Run("Should throw ErrInvalidWorkerPoolSize", func(t *testing.T) {
 		t.Parallel()
-		if _, err := pipeline.NewStage(done, 0, 3, in, worker); err != pipeline.ErrInvalidWorkerPoolSize {
+		if _, err := pipeline.NewStage(0, 3, in, worker); err != pipeline.ErrInvalidWorkerPoolSize {
 			t.Errorf("Expected ErrInvalidWorkerPoolSize for workerPoolSize of 0, got nil")
 		}
 	})
@@ -208,11 +211,10 @@ func TestStage_Produces(t *testing.T) {
 	t.Run("Should be able to process more data than worker count",
 		func(t *testing.T) {
 			t.Parallel()
-			done := make(chan struct{})
 			input := make(chan int)
 
 			// Marking a stage with only 1 worker
-			stage, err := pipeline.NewStage(done, 1, 0, input, func(in int) int {
+			stage, err := pipeline.NewStage(1, 0, input, func(in int) int {
 				return in * in
 			})
 			if err != nil {
@@ -220,6 +222,7 @@ func TestStage_Produces(t *testing.T) {
 			}
 
 			output := stage.Produces()
+			stage.Start(context.Background())
 
 			go func() {
 				defer close(input)
@@ -240,11 +243,10 @@ func TestStage_Produces(t *testing.T) {
 
 	t.Run("Should work consistently with any buffer value", func(t *testing.T) {
 		t.Parallel()
-		done := make(chan struct{})
 		input := make(chan int)
 
 		// Marking a stage with only 1 worker
-		stage, err := pipeline.NewStage(done, 1, 8, input, func(in int) int {
+		stage, err := pipeline.NewStage(1, 8, input, func(in int) int {
 			return in * in
 		})
 		if err != nil {
@@ -252,6 +254,7 @@ func TestStage_Produces(t *testing.T) {
 		}
 
 		output := stage.Produces()
+		stage.Start(context.Background())
 
 		go func() {
 			defer close(input)
@@ -270,12 +273,12 @@ func TestStage_Produces(t *testing.T) {
 		}
 	})
 
-	t.Run("Should terminate early when done is closed", func(t *testing.T) {
+	t.Run("Should terminate early with cancellation", func(t *testing.T) {
 		t.Parallel()
-		done := make(chan struct{})
+		ctx, cancel := context.WithCancel(context.Background())
 		in := make(chan int)
 
-		stage, err := pipeline.NewStage(done, 1, 0, in, func(in int) int {
+		stage, err := pipeline.NewStage(1, 0, in, func(in int) int {
 			return in * in
 		})
 		if err != nil {
@@ -283,8 +286,9 @@ func TestStage_Produces(t *testing.T) {
 		}
 
 		output := stage.Produces()
+		stage.Start(ctx)
 
-		// We send infinitely many inputs, so if done isn't closed, the
+		// We send infinitely many inputs, so if cancel didn't happen, the
 		// pipeline won't stop, and the test will timeout and fail
 		go func() {
 			for {
@@ -292,16 +296,16 @@ func TestStage_Produces(t *testing.T) {
 			}
 		}()
 
-		// After 2 seconds, we close the done channel, which would terminate
+		// After 2 seconds, we call the cancel function, which would terminate
 		// the pipeline
 		go func() {
 			select {
 			case <-time.After(2 * time.Second):
-				close(done)
+				cancel()
 			}
 		}()
 
-		// If the close(done) did not work above, the test will dead-lock here
+		// If the cancellation did not work above, the test will dead-lock here
 		for range output {
 		}
 	})

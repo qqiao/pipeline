@@ -15,6 +15,7 @@
 package pipeline_test
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"testing"
@@ -24,7 +25,6 @@ import (
 )
 
 func ExamplePipeline_Consumes() {
-	done := make(chan struct{})
 	producer := make(chan int)
 	consumer := func(out pipeline.Producer[int]) {
 		for v := range out {
@@ -42,7 +42,7 @@ func ExamplePipeline_Consumes() {
 		i := in.(int)
 		return i * i
 	}
-	p := pipeline.NewPipeline[int, int](done)
+	p := pipeline.NewPipeline[int, int]()
 	p.Consumes(producer)
 	p.WithConsumer(consumer)
 
@@ -50,8 +50,7 @@ func ExamplePipeline_Consumes() {
 	if err != nil {
 		log.Fatalf("Unable to add stage: %v", err)
 	}
-
-	_, err = p.Produces()
+	p.Start(context.Background())
 	if err != nil {
 		log.Fatalf("Unable to run pipeline")
 	}
@@ -62,7 +61,6 @@ func ExamplePipeline_Consumes() {
 }
 
 func ExamplePipeline_Produces() {
-	done := make(chan struct{})
 	producer := make(chan int)
 	consumer := func(out pipeline.Producer[int]) {
 		for v := range out {
@@ -80,13 +78,13 @@ func ExamplePipeline_Produces() {
 		i := in.(int)
 		return i * i
 	}
-	p, err := pipeline.NewPipelineWithProducer[int, int](done,
-		producer).AddStage(10, 0, sq)
+	p, err := pipeline.NewPipelineWithProducer[int, int](producer).AddStage(10, 0, sq)
 	if err != nil {
 		log.Fatalf("Unable to add stage: %v", err)
 	}
 
 	out, err := p.Produces()
+	p.Start(context.Background())
 	if err != nil {
 		log.Fatalf("Unable to run pipeline")
 	}
@@ -101,7 +99,7 @@ func ExamplePipeline_Produces() {
 func ExamplePipeline_Produces_chaining() {
 	// In this example, we are going to chain 2 pipelines using the result of
 	// the first pipeline's Produces call as the Producer of the second.
-	done := make(chan struct{})
+	ctx := context.Background()
 	producer := make(chan int)
 	consumer := func(out pipeline.Producer[int]) {
 		for v := range out {
@@ -119,12 +117,12 @@ func ExamplePipeline_Produces_chaining() {
 		i := in.(int)
 		return i * i
 	}
-	p1, err := pipeline.NewPipelineWithProducer[int, int](done,
-		producer).AddStage(10, 0, sq)
+	p1, err := pipeline.NewPipelineWithProducer[int, int](producer).AddStage(10, 0, sq)
 	if err != nil {
 		log.Fatalf("Unable to add stage: %v", err)
 	}
 	p1Producer, err := p1.Produces()
+	p1.Start(ctx)
 	if err != nil {
 		log.Fatalf("Unable to run p1")
 	}
@@ -135,11 +133,9 @@ func ExamplePipeline_Produces_chaining() {
 	}
 	// We chain the output channel of p1 into p2 by using it as the producer of
 	// p2
-	p2, err := pipeline.NewPipelineWithProducer[int, int](done,
-		p1Producer).AddStage(10, 0, cube)
+	p2, err := pipeline.NewPipelineWithProducer[int, int](p1Producer).AddStage(10, 0, cube)
 	p2.WithConsumer(consumer)
-
-	_, err = p2.Produces()
+	p2.Start(ctx)
 	if err != nil {
 		log.Fatalf("Unable to run pipeline")
 	}
@@ -150,11 +146,10 @@ func ExamplePipeline_Produces_chaining() {
 }
 
 func ExamplePipeline_Produces_stoppingShort() {
-	done := make(chan struct{})
+	ctx, cancel := context.WithCancel(context.Background())
 	producer := make(chan int)
 
-	p, err := pipeline.NewPipelineWithProducer[int, int](done,
-		producer).AddStage(1, 0, func(in any) any {
+	p, err := pipeline.NewPipelineWithProducer[int, int](producer).AddStage(1, 0, func(in any) any {
 		return in
 	})
 	if err != nil {
@@ -169,12 +164,12 @@ func ExamplePipeline_Produces_stoppingShort() {
 	}()
 
 	// Without this goroutine, the pipeline will simply run on forever
-	// However, by closing the done channel in 2 seconds, we demonstrate that
-	// closing the done channel will stop the pipeline
+	// However, by cancelling the context in 2 seconds, we demonstrate that
+	// it will stop the pipeline
 	go func() {
 		select {
 		case <-time.After(2 * time.Second):
-			close(done)
+			cancel()
 		}
 	}()
 
@@ -182,8 +177,9 @@ func ExamplePipeline_Produces_stoppingShort() {
 	if err != nil {
 		log.Fatalf("Unable to execute pipeline: %v", err)
 	}
+	p.Start(ctx)
 
-	// This part would infinite loop if we didn't close the done channel
+	// This part would infinite loop if we didn't cancel the context
 	for range out {
 	}
 
@@ -192,8 +188,7 @@ func ExamplePipeline_Produces_stoppingShort() {
 
 func TestPipeline_AddStage(t *testing.T) {
 	t.Run("Should return error when no producer is present", func(t *testing.T) {
-		done := make(chan struct{})
-		p := pipeline.NewPipeline[int, int](done)
+		p := pipeline.NewPipeline[int, int]()
 		if _, err := p.AddStage(1, 0, func(input any) any {
 			return input
 		}); err == nil {

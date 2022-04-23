@@ -15,6 +15,7 @@
 package pipeline
 
 import (
+	"context"
 	"errors"
 	"sync"
 )
@@ -38,7 +39,6 @@ type Worker[I, O any] func(I) O
 // Each Stage should be considered a unit of work done to the data in the
 // Pipeline.
 type Stage[I, O any] struct {
-	done           <-chan struct{}
 	in             <-chan I
 	out            chan O
 	workerPoolSize int
@@ -46,9 +46,6 @@ type Stage[I, O any] struct {
 }
 
 // NewStage creates a new stage with necessary parameters specified.
-//
-// done: done is a ready only channel that if closed, the stage immediately
-// stops.
 //
 // workerPoolSize: internally, the stage maintains a pool of workers all
 // running in parallel, workerPoolSize specifies the upper bound of the
@@ -65,7 +62,7 @@ type Stage[I, O any] struct {
 //
 // This function returns ErrInvalidWorkerPoolSize if workerPoolSize is not at
 // least 1.
-func NewStage[I, O any](done <-chan struct{}, workerPoolSize int,
+func NewStage[I, O any](workerPoolSize int,
 	bufferSize int, in Producer[I], worker Worker[I, O]) (*Stage[I, O], error) {
 	if workerPoolSize < 1 {
 		return nil, ErrInvalidWorkerPoolSize
@@ -74,7 +71,6 @@ func NewStage[I, O any](done <-chan struct{}, workerPoolSize int,
 		return nil, ErrInvalidBufferSize
 	}
 	return &Stage[I, O]{
-		done:           done,
 		in:             in,
 		out:            make(chan O, bufferSize),
 		workerPoolSize: workerPoolSize,
@@ -82,8 +78,13 @@ func NewStage[I, O any](done <-chan struct{}, workerPoolSize int,
 	}, nil
 }
 
-// Produces method starts the processing of the stage, and returns a Producer of
-// the output type of the current stage.
+// Produces returns a Producer where the results of this stage will be sent
+// into.
+func (s *Stage[I, O]) Produces() Producer[O] {
+	return s.out
+}
+
+// Start method starts the processing of the stage.
 //
 // This method is responsible for creating the worker pool, distributing work
 // between the workers and collating the results in the end.
@@ -93,14 +94,15 @@ func NewStage[I, O any](done <-chan struct{}, workerPoolSize int,
 //
 // The worker pool also does not shrink, that is, once n workers are created,
 // they will keep on serving until either the stage is explicitly terminated
-// by closing the done channel, or the in channel is closed.
+// by cancelling the context, or the in channel is closed.
 //
 // Please also note that order is NOT guaranteed by the Stage. That is, results
 // could come out of the channel in different order from they were read in the
 // input channel.
-func (s *Stage[I, O]) Produces() Producer[O] {
+func (s *Stage[I, O]) Start(ctx context.Context) {
 	workerIn := make(chan I)
 	cs := make(chan (chan O))
+	go s.merge(ctx, cs)
 	go func() {
 		defer close(workerIn)
 		defer close(cs)
@@ -123,7 +125,7 @@ func (s *Stage[I, O]) Produces() Producer[O] {
 									return
 								}
 								workerOut <- s.worker(i)
-							case <-s.done:
+							case <-ctx.Done():
 								return
 							}
 						}
@@ -134,16 +136,14 @@ func (s *Stage[I, O]) Produces() Producer[O] {
 				}
 
 				workerIn <- input
-			case <-s.done:
+			case <-ctx.Done():
 				return
 			}
 		}
 	}()
-	go s.merge(cs)
-	return s.out
 }
 
-func (s *Stage[I, O]) merge(cs chan (chan O)) {
+func (s *Stage[I, O]) merge(ctx context.Context, cs chan (chan O)) {
 	var wg sync.WaitGroup
 
 	output := func(in <-chan O) {
@@ -155,7 +155,7 @@ func (s *Stage[I, O]) merge(cs chan (chan O)) {
 					return
 				}
 				s.out <- o
-			case <-s.done:
+			case <-ctx.Done():
 				return
 			}
 		}
@@ -171,7 +171,7 @@ func (s *Stage[I, O]) merge(cs chan (chan O)) {
 				wg.Add(1)
 				go output(c)
 			}
-		case <-s.done:
+		case <-ctx.Done():
 			stop = true
 		}
 
