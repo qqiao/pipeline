@@ -17,6 +17,7 @@ package pipeline // import "github.com/qqiao/pipeline"
 import (
 	"context"
 	"errors"
+	"sync"
 )
 
 // Consumer is an interface that wraps the Consume method.
@@ -128,18 +129,27 @@ func (p *Pipeline[I, O]) Produces() (Producer[O], error) {
 }
 
 // Start method starts the processing of the pipeline.
-func (p *Pipeline[I, O]) Start(ctx context.Context) {
-	var stageOut <-chan any
-	for _, stage := range p.stages {
-		stageOut = stage.Produces()
-		stage.Start(ctx)
-	}
+//
+// This method returns a channel of errors, however because of the fail-fast
+// nature of pipelines. The pipeline will stop execution when it encounters
+// the first error.
+func (p *Pipeline[I, O]) Start(ctx context.Context) <-chan error {
+	errCh := make(chan error)
+
+	errIn := make(chan (<-chan error))
+	go func() {
+		for _, stage := range p.stages {
+			errIn <- stage.Start(ctx)
+		}
+	}()
+
+	go merge(ctx, errCh, errIn)
 
 	go func() {
 		defer close(p.out)
 		for {
 			select {
-			case v, ok := <-stageOut:
+			case v, ok := <-p.stages[len(p.stages)-1].Produces():
 				if !ok {
 					return
 				}
@@ -153,6 +163,8 @@ func (p *Pipeline[I, O]) Start(ctx context.Context) {
 	if p.consumer != nil {
 		p.consumer(p.out)
 	}
+
+	return errCh
 }
 
 // WithConsumer sets the consumer of the pipeline.
@@ -162,4 +174,39 @@ func (p *Pipeline[I, O]) Start(ctx context.Context) {
 func (p *Pipeline[I, O]) WithConsumer(consumer ConsumerFunc[O]) *Pipeline[I, O] {
 	p.consumer = consumer
 	return p
+}
+
+func merge[O any](ctx context.Context, out chan O, cs chan (<-chan O)) {
+	var wg sync.WaitGroup
+	defer close(out)
+
+	output := func(in <-chan O) {
+		defer wg.Done()
+		for {
+			select {
+			case o, ok := <-in:
+				if !ok {
+					return
+				}
+				out <- o
+			case <-ctx.Done():
+				return
+			}
+		}
+	}
+	for stop := false; !stop; {
+		select {
+		case c, ok := <-cs:
+			if !ok {
+				stop = true
+			} else {
+				wg.Add(1)
+				go output(c)
+			}
+		case <-ctx.Done():
+			stop = true
+		}
+
+	}
+	wg.Wait()
 }

@@ -16,8 +16,11 @@ package pipeline_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
+	"reflect"
+	"sort"
 	"testing"
 	"time"
 
@@ -38,9 +41,9 @@ func ExamplePipeline_Consumes() {
 		producer <- 3
 	}()
 
-	sq := func(in any) any {
+	sq := func(in any) (any, error) {
 		i := in.(int)
-		return i * i
+		return i * i, nil
 	}
 	p := pipeline.NewPipeline[int, int]()
 	p.Consumes(producer)
@@ -74,9 +77,9 @@ func ExamplePipeline_Produces() {
 		producer <- 3
 	}()
 
-	sq := func(in any) any {
+	sq := func(in any) (any, error) {
 		i := in.(int)
-		return i * i
+		return i * i, nil
 	}
 	p, err := pipeline.NewPipelineWithProducer[int, int](producer).AddStage(10, 0, sq)
 	if err != nil {
@@ -113,44 +116,45 @@ func ExamplePipeline_Produces_chaining() {
 		producer <- 3
 	}()
 
-	sq := func(in any) any {
+	sq := func(in any) (any, error) {
 		i := in.(int)
-		return i * i
+		return i * i, nil
 	}
 	p1, err := pipeline.NewPipelineWithProducer[int, int](producer).AddStage(10, 0, sq)
 	if err != nil {
 		log.Fatalf("Unable to add stage: %v", err)
 	}
 	p1Producer, err := p1.Produces()
-	p1.Start(ctx)
 	if err != nil {
-		log.Fatalf("Unable to run p1")
+		log.Fatalf("Unable to get pipeline1's producer")
 	}
 
-	cube := func(in any) any {
+	cube := func(in any) (any, error) {
 		i := in.(int)
-		return i * i * i
+		return i * i * i, nil
 	}
 	// We chain the output channel of p1 into p2 by using it as the producer of
 	// p2
 	p2, err := pipeline.NewPipelineWithProducer[int, int](p1Producer).AddStage(10, 0, cube)
-	p2.WithConsumer(consumer)
-	p2.Start(ctx)
 	if err != nil {
-		log.Fatalf("Unable to run pipeline")
+		log.Fatalf("Unable to create pipeline 2")
 	}
+	p2.WithConsumer(consumer)
+	p1.Start(ctx)
+	p2.Start(ctx)
 
 	// Unordered Output:
 	// 64
 	// 729
 }
 
-func ExamplePipeline_Produces_stoppingShort() {
-	ctx, cancel := context.WithCancel(context.Background())
+func ExamplePipeline_Start_stoppingShort() {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
 	producer := make(chan int)
 
-	p, err := pipeline.NewPipelineWithProducer[int, int](producer).AddStage(1, 0, func(in any) any {
-		return in
+	p, err := pipeline.NewPipelineWithProducer[int, int](producer).AddStage(1, 0, func(in any) (any, error) {
+		return in, nil
 	})
 	if err != nil {
 		log.Fatalf("Unable to create pipeline: %v", err)
@@ -160,16 +164,6 @@ func ExamplePipeline_Produces_stoppingShort() {
 	go func() {
 		for {
 			producer <- 1
-		}
-	}()
-
-	// Without this goroutine, the pipeline will simply run on forever
-	// However, by cancelling the context in 2 seconds, we demonstrate that
-	// it will stop the pipeline
-	go func() {
-		select {
-		case <-time.After(2 * time.Second):
-			cancel()
 		}
 	}()
 
@@ -189,10 +183,71 @@ func ExamplePipeline_Produces_stoppingShort() {
 func TestPipeline_AddStage(t *testing.T) {
 	t.Run("Should return error when no producer is present", func(t *testing.T) {
 		p := pipeline.NewPipeline[int, int]()
-		if _, err := p.AddStage(1, 0, func(input any) any {
-			return input
+		if _, err := p.AddStage(1, 0, func(input any) (any, error) {
+			return input, nil
 		}); err == nil {
 			t.Error("Expecting ErrNoProducer, got nil")
 		}
 	})
+}
+
+func TestPipeline_Start_failfast(t *testing.T) {
+	expected := []int{2, 5, 10, 17, 26}
+	er := errors.New("input greater than 5")
+	in := make(chan int)
+	go func() {
+		i := 0
+		for {
+			in <- i
+			i++
+		}
+	}()
+
+	p := pipeline.NewPipelineWithProducer[int, int](in)
+	if _, err := p.AddStage(1, 0, func(input any) (any, error) {
+		in := input.(int)
+		return in + 1, nil
+	}); err != nil {
+		t.Errorf("Failed to add first stage: %v", err)
+	}
+
+	if _, err := p.AddStage(1, 0, func(input any) (any, error) {
+		in := input.(int)
+		if in > 5 {
+			return in, er
+		}
+		return in * in, nil
+	}); err != nil {
+		t.Error("Failed to add second stage")
+	}
+
+	if _, err := p.AddStage(1, 0, func(input any) (any, error) {
+		in := input.(int)
+		return in + 1, nil
+	}); err != nil {
+		t.Error("Failed to add third stage")
+	}
+
+	out, _ := p.Produces()
+	errCh := p.Start(context.Background())
+
+	var err error
+	got := make([]int, 0)
+	// If fail fast didn't happen, the following loop will infinite loop
+	for cont := true; cont; {
+		select {
+		case i := <-out:
+			got = append(got, i)
+		case err = <-errCh:
+			cont = false
+		}
+	}
+	sort.Ints(got)
+	if !reflect.DeepEqual(got, expected) {
+		t.Errorf("Expected: %v\nGot: %v", expected, got)
+	}
+
+	if er != err {
+		t.Errorf("Expecting error, but didn't get")
+	}
 }
