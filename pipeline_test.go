@@ -22,7 +22,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/qqiao/pipeline"
+	"github.com/qqiao/pipeline/v2"
 )
 
 func ExamplePipeline_Consumes() {
