@@ -17,7 +17,6 @@ package pipeline
 import (
 	"context"
 	"errors"
-	"sync"
 )
 
 // Errors for when the stage is in a invalid state
@@ -32,7 +31,7 @@ var (
 // Stage will take care of parallelizing workers and combining the results.
 // Since multiple Worker instances will be created, Worker functions are
 // expected to be thread-safe to prevent any unpredictable results.
-type Worker[I, O any] func(I) O
+type Worker[I, O any] func(I) (O, error)
 
 // Stage represents a single stage in the Pipeline.
 //
@@ -99,13 +98,18 @@ func (s *Stage[I, O]) Produces() Producer[O] {
 // Please also note that order is NOT guaranteed by the Stage. That is, results
 // could come out of the channel in different order from they were read in the
 // input channel.
-func (s *Stage[I, O]) Start(ctx context.Context) {
+//
+// This method also returns a channel of errors, however, due to the fail-fast
+// nature of a pipeline, the execution will stop on the first error occurance.
+func (s *Stage[I, O]) Start(ctx context.Context) <-chan error {
 	workerIn := make(chan I)
-	cs := make(chan (chan O))
-	go s.merge(ctx, cs)
+	cs := make(chan (<-chan O))
+	errCh := make(chan error)
+	_ctx, cancel := context.WithCancel(ctx)
 	go func() {
 		defer close(workerIn)
 		defer close(cs)
+		defer close(errCh)
 
 		workerCount := 0
 		for {
@@ -124,8 +128,14 @@ func (s *Stage[I, O]) Start(ctx context.Context) {
 								if !ok {
 									return
 								}
-								workerOut <- s.worker(i)
-							case <-ctx.Done():
+								o, err := s.worker(i)
+								if err != nil {
+									errCh <- err
+									cancel()
+									return
+								}
+								workerOut <- o
+							case <-_ctx.Done():
 								return
 							}
 						}
@@ -136,45 +146,11 @@ func (s *Stage[I, O]) Start(ctx context.Context) {
 				}
 
 				workerIn <- input
-			case <-ctx.Done():
+			case <-_ctx.Done():
 				return
 			}
 		}
 	}()
-}
-
-func (s *Stage[I, O]) merge(ctx context.Context, cs chan (chan O)) {
-	var wg sync.WaitGroup
-
-	output := func(in <-chan O) {
-		defer wg.Done()
-		for {
-			select {
-			case o, ok := <-in:
-				if !ok {
-					return
-				}
-				s.out <- o
-			case <-ctx.Done():
-				return
-			}
-		}
-	}
-
-	defer close(s.out)
-	for stop := false; !stop; {
-		select {
-		case c, ok := <-cs:
-			if !ok {
-				stop = true
-			} else {
-				wg.Add(1)
-				go output(c)
-			}
-		case <-ctx.Done():
-			stop = true
-		}
-
-	}
-	wg.Wait()
+	go merge(_ctx, s.out, cs)
+	return errCh
 }

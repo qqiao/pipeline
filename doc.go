@@ -141,6 +141,15 @@ needs to stop the pipeline immediately, it should cancel the context, and
 the pipeline and all of its stages will stop processing and terminate
 gracefully.
 
+Error Handling
+
+A pipeline is designed to fail fast. That is, if any error should occur at any
+time at any stage, the pipeline terminates.
+
+The Start function on both Stage and Pipeline returns a channel of errors,
+however, as soon as a single error is fed into the channel, the entile pipeline
+halts and the error can be read from the channel.
+
 Performance Tuning
 
 There are 3 important dials that would help fine tune the performance
