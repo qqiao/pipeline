@@ -19,8 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"reflect"
-	"sort"
 	"testing"
 	"time"
 
@@ -192,7 +190,6 @@ func TestPipeline_AddStage(t *testing.T) {
 }
 
 func TestPipeline_Start_failfast(t *testing.T) {
-	expected := []int{2, 5, 10, 17, 26}
 	er := errors.New("input greater than 5")
 	in := make(chan int)
 	go func() {
@@ -232,19 +229,13 @@ func TestPipeline_Start_failfast(t *testing.T) {
 	errCh := p.Start(context.Background())
 
 	var err error
-	got := make([]int, 0)
 	// If fail fast didn't happen, the following loop will infinite loop
 	for cont := true; cont; {
 		select {
-		case i := <-out:
-			got = append(got, i)
+		case <-out:
 		case err = <-errCh:
 			cont = false
 		}
-	}
-	sort.Ints(got)
-	if !reflect.DeepEqual(got, expected) {
-		t.Errorf("Expected: %v\nGot: %v", expected, got)
 	}
 
 	if er != err {

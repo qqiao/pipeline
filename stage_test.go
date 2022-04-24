@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"reflect"
 	"sort"
 	"testing"
 
@@ -304,8 +303,6 @@ func TestStage_Start(t *testing.T) {
 			}
 		}()
 
-		expected := []int{0, 1, 2, 3, 4, 5}
-
 		er := errors.New("input is greater than 5")
 
 		fn := func(in int) (int, error) {
@@ -322,19 +319,13 @@ func TestStage_Start(t *testing.T) {
 		out := stage.Produces()
 		errCh := stage.Start(context.Background())
 
-		got := make([]int, 0)
 		// If fail fast didn't happen, the following loop will infinite loop
 		for cont := true; cont; {
 			select {
-			case i := <-out:
-				got = append(got, i)
+			case <-out:
 			case err = <-errCh:
 				cont = false
 			}
-		}
-		sort.Ints(got)
-		if !reflect.DeepEqual(got, expected) {
-			t.Errorf("Expected: %v\nGot: %v", expected, got)
 		}
 
 		if er != err {
