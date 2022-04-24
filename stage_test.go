@@ -20,8 +20,10 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"reflect"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/qqiao/pipeline"
 )
@@ -202,98 +204,98 @@ func TestNewStage(t *testing.T) {
 }
 
 func TestStage_Start(t *testing.T) {
-	// expected := []int{1, 4, 9, 16, 25,
-	// 	36, 49, 64, 81, 100}
-	// t.Run("Should be able to process more data than worker count",
-	// 	func(t *testing.T) {
-	// 		t.Parallel()
-	// 		input := make(chan int)
+	expected := []int{1, 4, 9, 16, 25,
+		36, 49, 64, 81, 100}
+	t.Run("Should be able to process more data than worker count",
+		func(t *testing.T) {
+			t.Parallel()
+			input := make(chan int)
 
-	// 		// Marking a stage with only 1 worker
-	// 		stage, err := pipeline.NewStage(1, 0, input, sq)
-	// 		if err != nil {
-	// 			t.Errorf("Error creating stage: %v", err)
-	// 		}
+			// Marking a stage with only 1 worker
+			stage, err := pipeline.NewStage(1, 0, input, sq)
+			if err != nil {
+				t.Errorf("Error creating stage: %v", err)
+			}
 
-	// 		output := stage.Produces()
-	// 		stage.Start(context.Background())
+			output := stage.Produces()
+			stage.Start(context.Background())
 
-	// 		go func() {
-	// 			defer close(input)
-	// 			for i := 1; i < 11; i++ {
-	// 				input <- i
-	// 			}
-	// 		}()
+			go func() {
+				defer close(input)
+				for i := 1; i < 11; i++ {
+					input <- i
+				}
+			}()
 
-	// 		var got []int
-	// 		for result := range output {
-	// 			got = append(got, result)
-	// 		}
-	// 		sort.Ints(got)
-	// 		if !reflect.DeepEqual(expected, got) {
-	// 			t.Errorf("Expected: %v.\nGot: %v", expected, got)
-	// 		}
-	// 	})
+			var got []int
+			for result := range output {
+				got = append(got, result)
+			}
+			sort.Ints(got)
+			if !reflect.DeepEqual(expected, got) {
+				t.Errorf("Expected: %v.\nGot: %v", expected, got)
+			}
+		})
 
-	// t.Run("Should work consistently with any buffer value", func(t *testing.T) {
-	// 	t.Parallel()
-	// 	input := make(chan int)
+	t.Run("Should work consistently with any buffer value", func(t *testing.T) {
+		t.Parallel()
+		input := make(chan int)
 
-	// 	// Marking a stage with only 1 worker
-	// 	stage, err := pipeline.NewStage(1, 8, input, sq)
-	// 	if err != nil {
-	// 		t.Errorf("Error creating stage: %v", err)
-	// 	}
+		// Marking a stage with only 1 worker
+		stage, err := pipeline.NewStage(1, 8, input, sq)
+		if err != nil {
+			t.Errorf("Error creating stage: %v", err)
+		}
 
-	// 	output := stage.Produces()
-	// 	stage.Start(context.Background())
+		output := stage.Produces()
+		stage.Start(context.Background())
 
-	// 	go func() {
-	// 		defer close(input)
-	// 		for i := 1; i < 11; i++ {
-	// 			input <- i
-	// 		}
-	// 	}()
+		go func() {
+			defer close(input)
+			for i := 1; i < 11; i++ {
+				input <- i
+			}
+		}()
 
-	// 	var got []int
-	// 	for result := range output {
-	// 		got = append(got, result)
-	// 	}
-	// 	sort.Ints(got)
-	// 	if !reflect.DeepEqual(expected, got) {
-	// 		t.Errorf("Expected: %v.\nGot: %v", expected, got)
-	// 	}
-	// })
+		var got []int
+		for result := range output {
+			got = append(got, result)
+		}
+		sort.Ints(got)
+		if !reflect.DeepEqual(expected, got) {
+			t.Errorf("Expected: %v.\nGot: %v", expected, got)
+		}
+	})
 
-	// t.Run("Should terminate early with cancellation", func(t *testing.T) {
-	// 	t.Parallel()
-	// 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	// 	defer cancel()
-	// 	in := make(chan int)
+	t.Run("Should terminate early with cancellation", func(t *testing.T) {
+		t.Parallel()
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		in := make(chan int)
 
-	// 	stage, err := pipeline.NewStage(1, 0, in, sq)
-	// 	if err != nil {
-	// 		t.Errorf("Error creating stage: %v", err)
-	// 	}
+		stage, err := pipeline.NewStage(1, 0, in, sq)
+		if err != nil {
+			t.Errorf("Error creating stage: %v", err)
+		}
 
-	// 	output := stage.Produces()
-	// 	stage.Start(ctx)
+		output := stage.Produces()
+		stage.Start(ctx)
 
-	// 	// We send infinitely many inputs, so if cancel didn't happen, the
-	// 	// pipeline won't stop, and the test will timeout and fail
-	// 	go func() {
-	// 		for {
-	// 			in <- 1
-	// 		}
-	// 	}()
+		// We send infinitely many inputs, so if cancel didn't happen, the
+		// pipeline won't stop, and the test will timeout and fail
+		go func() {
+			for {
+				in <- 1
+			}
+		}()
 
-	// 	// If the cancellation did not work above, the test will dead-lock here
-	// 	for range output {
-	// 	}
-	// })
+		// If the cancellation did not work above, the test will dead-lock here
+		for range output {
+		}
+	})
 
 	t.Run("Should fail fast on error", func(t *testing.T) {
-		//t.Parallel()
+		t.Parallel()
 		in := make(chan int)
 		go func() {
 			i := 0
