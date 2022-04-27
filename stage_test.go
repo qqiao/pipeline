@@ -19,7 +19,6 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
 	"reflect"
 	"sort"
 	"testing"
@@ -43,7 +42,6 @@ func build[I, O any](workerPoolSize int, bufferSize int,
 	stage, err := pipeline.NewStage(workerPoolSize, bufferSize, in, worker)
 	if err != nil {
 		log.Fatalf("Unable to create stage. Error: %v", err)
-		os.Exit(1)
 	}
 
 	return in, stage

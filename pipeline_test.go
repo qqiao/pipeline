@@ -189,7 +189,7 @@ func TestPipeline_AddStage(t *testing.T) {
 	})
 }
 
-func TestPipeline_Start_failfast(t *testing.T) {
+func TestPipeline_Start_failFast(t *testing.T) {
 	er := errors.New("input greater than 5")
 	in := make(chan int)
 	go func() {
