@@ -61,42 +61,6 @@ func ExamplePipeline_Consumes() {
 	// 9
 }
 
-func ExamplePipeline_Produces() {
-	producer := make(chan int)
-	consumer := func(out pipeline.Producer[int]) {
-		for v := range out {
-			fmt.Println(v)
-		}
-	}
-
-	go func() {
-		defer close(producer)
-		producer <- 2
-		producer <- 3
-	}()
-
-	sq := func(in any) (any, error) {
-		i := in.(int)
-		return i * i, nil
-	}
-	p, err := pipeline.NewPipelineWithProducer[int, int](producer).AddStage(10, 0, sq)
-	if err != nil {
-		log.Fatalf("Unable to add stage: %v", err)
-	}
-
-	out, err := p.Produces()
-	p.Start(context.Background())
-	if err != nil {
-		log.Fatalf("Unable to run pipeline")
-	}
-
-	consumer(out)
-
-	// Unordered Output:
-	// 4
-	// 9
-}
-
 func ExamplePipeline_Produces_chaining() {
 	// In this example, we are going to chain 2 pipelines using the result of
 	// the first pipeline's Produces call as the Producer of the second.
@@ -146,12 +110,49 @@ func ExamplePipeline_Produces_chaining() {
 	// 729
 }
 
-func ExamplePipeline_Start_stoppingShort() {
+func ExamplePipeline_Start() {
+	producer := make(chan int)
+	consumer := func(out pipeline.Producer[int]) {
+		for v := range out {
+			fmt.Println(v)
+		}
+	}
+
+	go func() {
+		defer close(producer)
+		producer <- 2
+		producer <- 3
+	}()
+
+	sq := func(in any) (any, error) {
+		i := in.(int)
+		return i * i, nil
+	}
+	p, err := pipeline.NewPipelineWithProducer[int, int](producer).AddStage(10, 0, sq)
+	if err != nil {
+		log.Fatalf("Unable to add stage: %v", err)
+	}
+
+	out, err := p.Produces()
+	p.Start(context.Background())
+	if err != nil {
+		log.Fatalf("Unable to run pipeline")
+	}
+
+	consumer(out)
+
+	// Unordered Output:
+	// 4
+	// 9
+}
+
+func ExamplePipeline_Start_stopping() {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	producer := make(chan int)
 
-	p, err := pipeline.NewPipelineWithProducer[int, int](producer).AddStage(1, 0, func(in any) (any, error) {
+	p, err := pipeline.NewPipelineWithProducer[int,
+		int](producer).AddStage(1, 0, func(in any) (any, error) {
 		return in, nil
 	})
 	if err != nil {
@@ -180,12 +181,90 @@ func ExamplePipeline_Start_stoppingShort() {
 
 func TestPipeline_AddStage(t *testing.T) {
 	t.Run("Should return error when no producer is present", func(t *testing.T) {
+		t.Parallel()
 		p := pipeline.NewPipeline[int, int]()
 		if _, err := p.AddStage(1, 0, func(input any) (any, error) {
 			return input, nil
 		}); err == nil {
 			t.Error("Expecting ErrNoProducer, got nil")
 		}
+	})
+}
+
+func TestPipeline_AddStageStreamWorker(t *testing.T) {
+	t.Run("Should ErrModificationAfterStart on modification after start",
+		func(t *testing.T) {
+			t.Parallel()
+			in := make(chan int)
+			go func() {
+				i := 0
+				for {
+					in <- i
+					i++
+				}
+			}()
+
+			addOne := func(input any) (any, error) {
+				in := input.(int)
+				return in + 1, nil
+			}
+
+			p := pipeline.NewPipelineWithProducer[int, int](in)
+			if _, err := p.AddStageStreamWorker(1, 0,
+				pipeline.NewStreamWorker(addOne)); err != nil {
+				t.Errorf("Failed to add first stage: %v", err)
+			}
+			ch, err := p.Produces()
+			if err != nil {
+				t.Errorf("Error getting producer of pipeline: %v", err)
+			}
+
+			go func() {
+				for range ch {
+				}
+			}()
+
+			// starting the pipeline
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			p.Start(ctx)
+
+			if _, err = p.AddStageStreamWorker(1, 0,
+				pipeline.NewStreamWorker(addOne)); err != pipeline.
+				ErrModificationAfterStart {
+				t.Errorf("Expecting ErrModificationAfterStart")
+			}
+		})
+
+	t.Run("Should be thread-safe", func(t *testing.T) {
+		t.Parallel()
+		in := make(chan int)
+
+		addOne := func(input any) (any, error) {
+			in := input.(int)
+			return in + 1, nil
+		}
+
+		p := pipeline.NewPipelineWithProducer[int, int](in)
+		if _, err := p.AddStageStreamWorker(1, 0,
+			pipeline.NewStreamWorker(addOne)); err != nil {
+			t.Errorf("Failed to add first stage: %v", err)
+		}
+
+		go func() {
+			for i := 0; i < 20; i++ {
+				p.AddStageStreamWorker(1, 0, pipeline.NewStreamWorker(addOne))
+			}
+		}()
+
+		go func() {
+			for i := 0; i < 20; i++ {
+				p.AddStageStreamWorker(1, 0, pipeline.NewStreamWorker(addOne))
+			}
+		}()
+
+		// Any data race issue, the race detector should detect this
 	})
 }
 

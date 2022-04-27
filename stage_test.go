@@ -111,7 +111,7 @@ func BenchmarkWorkerPoolSize10BufferSize10(b *testing.B) {
 	}
 }
 
-func ExampleStage_Produces() {
+func ExampleStage_Start() {
 	input := make(chan int)
 
 	// sq takes an integer and returns the square of that integer
@@ -139,7 +139,7 @@ func ExampleStage_Produces() {
 	// 9
 }
 
-func ExampleStage_Produces_ordered() {
+func ExampleStage_Start_ordered() {
 	type OrderedEntry struct {
 		Order int
 		Value int
@@ -188,14 +188,16 @@ func TestNewStage(t *testing.T) {
 
 	t.Run("Should throw ErrInvalidBufferSize", func(t *testing.T) {
 		t.Parallel()
-		if _, err := pipeline.NewStage(10, -1, in, sq); err != pipeline.ErrInvalidBufferSize {
+		if _, err := pipeline.NewStage(10, -1, in,
+			sq); err != pipeline.ErrInvalidBufferSize {
 			t.Errorf("Expected ErrInvalidBufferSize for bufferSize of -1, got nil")
 		}
 	})
 
 	t.Run("Should throw ErrInvalidWorkerPoolSize", func(t *testing.T) {
 		t.Parallel()
-		if _, err := pipeline.NewStage(0, 3, in, sq); err != pipeline.ErrInvalidWorkerPoolSize {
+		if _, err := pipeline.NewStage(0, 3, in,
+			sq); err != pipeline.ErrInvalidWorkerPoolSize {
 			t.Errorf("Expected ErrInvalidWorkerPoolSize for workerPoolSize of 0, got nil")
 		}
 	})
@@ -330,6 +332,43 @@ func TestStage_Start(t *testing.T) {
 
 		if er != err {
 			t.Errorf("Expecting error, but didn't get")
+		}
+	})
+
+	t.Run("Should be thread-safe and reentrant", func(t *testing.T) {
+		t.Parallel()
+		input := make(chan int)
+
+		// Marking a stage with only 1 worker
+		stage, err := pipeline.NewStage(1, 8, input, sq)
+		if err != nil {
+			t.Errorf("Error creating stage: %v", err)
+		}
+		output := stage.Produces()
+
+		ctx := context.Background()
+
+		// multiple different ways of calling the stage.Start
+		stage.Start(ctx)
+		stage.Start(ctx)
+		go func() {
+			stage.Start(ctx)
+		}()
+
+		go func() {
+			defer close(input)
+			for i := 1; i < 11; i++ {
+				input <- i
+			}
+		}()
+
+		var got []int
+		for result := range output {
+			got = append(got, result)
+		}
+		sort.Ints(got)
+		if !reflect.DeepEqual(expected, got) {
+			t.Errorf("Expected: %v.\nGot: %v", expected, got)
 		}
 	})
 }
