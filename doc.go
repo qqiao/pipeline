@@ -25,9 +25,9 @@ team here: https://go.dev/blog/pipelines.
 This library takes the overall idea of the blog post and makes it easier to
 use by implementing it with support of generics, introduced in Go 1.18.
 
-Additional care has also been taken in the design of the API to ensure that both
-connecting multiple pipelines and creating multi-stage pipelines are as easy
-as possible.
+Additional care has also been taken in the design of the API to ensure that
+both connecting multiple pipelines and creating multi-stage pipelines are as
+easy as possible.
 
 Basic Concepts
 
@@ -54,6 +54,37 @@ values are sent into is also the definition of a Producer, you can consider a
 ConsumerFunc as this:
     type ConsumerFunc[I any] func(Producer[I])
 
+Stages
+
+Stages are the heart of the pipeline. While the API of a Stage look extremely
+similar to that of a Pipeline, the actual multiplexing of the workers and the
+final collation of the results are done by the stage. Therefore, the NewStage
+function requires additional parameters to control the multiplexing behaviours
+of the stage.
+
+Each stage must have a Worker function. A worker can either be a simple
+function that takes an input and returns an output or an error;
+or a StreamWorker that continuously reads from the producer and sends its
+output into a channel. The Stage will take care of the parallelization
+workers and the combination of the results. Since multiple Worker instances
+will be created, Worker functions are expected to be thread-safe to prevent
+any unpredictable results.
+
+The workerPoolSize parameter defines the upper bound of the number of workers.
+
+All Worker goroutines are lazily created. A new worker goroutine is created
+when a new input is read from the producer, until workerPoolSize is reached.
+Given that goroutines are cheap to create, in order to keep the implementation
+as simple as possible, no worker re-use will happen in this growing phase.
+
+Once workerPoolSize is reached, worker goroutines will compete for the inputs
+from the producer until the pipeline is done. The pool will not auto shrink for
+simplicity reasons.
+
+The bufferSize parameter defines the buffer size of the output channel. This
+allows the processing to start without having to block wait on the consumer to
+start reading.
+
 Consuming a Pipeline
 
 There are multiple ways of consuming the output of a pipeline.
@@ -73,35 +104,6 @@ encourage applications to not use this approach and instead use methods 1 and
 
 More advanced uses of the Consumer and Producer pattern will be discussed
 further in the Chaining Pipelines section.
-
-Stages
-
-Stages is heart of the pipeline. While the API of a Stage look extremely
-similar to that of a Pipeline, the actual multiplexing of the workers and the
-final collation of the results are done by the stage. Therefore, the NewStage
-function requires additional parameters to control the multiplexing behaviours
-of the stage.
-
-Each stage must have a Worker function. A worker is just a simple function that
-takes an input and returns an output. The Stage will take care of the
-parallelization workers and the combination of the results.vSince multiple
-Worker instances will be created, Worker functions are expected to be
-thread-safe to prevent any unpredictable results.
-
-The workerPoolSize parameter defines the upper bound of the number of workers.
-
-All Worker goroutines are lazily created. A new worker goroutine is created
-when a new input is read from the producer, until workerPoolSize is reached.
-Given that goroutines are cheap to create, in order to keep the implementation
-as simple as possible, no worker re-use will happen in this growing phase.
-
-Once workerPoolSize is reached, worker goroutines will compete for the inputs
-from the producer until the pipeline is done. The pool will not auto shrink for
-simplicity reasons.
-
-The bufferSize parameter defines the buffer size of the output channel. This
-allows the processing to start without having to block wait on the consumer to
-start reading.
 
 Chaining Pipelines
 
@@ -181,6 +183,28 @@ buffer sizes and worker pool sizes.
 
 The Benchmark* methods in stage_test.go offers a good starting point on how
 to write such benchmark test cases.
+
+Thread Safety
+
+While use cases would be extremely rare for a pipeline itself or its stages
+to be shared across multiple goroutines, efforts have been made to ensure that
+both pipelines and stages are thread safe themselves. That is, calling
+AddStage* from different goroutines will not cause any race condition, and
+moreover, the Start methods on both Pipeline and Stage are re-entrant, so even
+if these methods are called multiple times from different goroutines
+accidentally, no ill-effect is to be expected.
+
+The more important aspect about thread-safety is the workers.
+The workers need to be thread safe as they will be executed in multiple
+goroutines, provided that workerPoolSize is set to higher than 1. In the rare
+case where the workers cannot be made thread-safe, users can simply set
+the workerPoolSize to 1, this would force the stage to create only a single
+worker goroutine, thus maintaining thread safety.
+
+Please note that even with workerPoolSize set to one, a pipeline is still
+useful in multiple ways: it still allows all the other benefits like chaining;
+you can still tweak the bufferSize of a stage so that the worker can start
+executing before the next stage is ready for better through-put.
 
 */
 package pipeline

@@ -17,6 +17,7 @@ package pipeline
 import (
 	"context"
 	"errors"
+	"sync"
 )
 
 // Errors for when the stage is in an invalid state
@@ -25,28 +26,38 @@ var (
 	ErrInvalidWorkerPoolSize = errors.New("invalid worker pool size")
 )
 
-// Worker represent a unit of work.
-//
-// Workers are simple functions that takes an input and returns an output. The
-// Stage will take care of the parallelization of workers and the combination
-// of the results.
-//
-// Since multiple Worker instances will be created, Worker functions are
-// expected to be thread-safe to prevent any unpredictable results.
-type Worker[I, O any] func(I) (O, error)
-
 // Stage represents a single stage in the Pipeline.
 //
 // Each Stage should be considered a unit of work done to the data in the
 // Pipeline.
 type Stage[I, O any] struct {
+	err            chan error
 	in             <-chan I
+	mutex          sync.Mutex
 	out            chan O
+	started        bool
 	workerPoolSize int
-	worker         Worker[I, O]
+	worker         StreamWorker[I, O]
 }
 
 // NewStage creates a new stage with necessary parameters specified.
+//
+// Internally, this function is nothing but a shorthand for the following:
+//     sw := NewStreamWorker(worker)
+//     stage := NewStageStreamWorker(workerPoolSize, bufferSize, in, sw)
+//
+// Please refer to documentation of NewStageStreamWorker for details of all
+// parameters.
+func NewStage[I, O any](workerPoolSize int, bufferSize int, in Producer[I],
+	worker Worker[I, O]) (*Stage[I, O], error) {
+	return NewStageStreamWorker(workerPoolSize, bufferSize, in,
+		NewStreamWorker(worker))
+}
+
+// NewStageStreamWorker creates a new stage with the given StreamWorker and
+// parameters.
+//
+// Parameters
 //
 // workerPoolSize: internally, the stage maintains a pool of workers all
 // running in parallel, workerPoolSize specifies the upper bound of the
@@ -61,19 +72,24 @@ type Stage[I, O any] struct {
 // worker: is the function that actually processes each unit of data read from
 // the in channel.
 //
+// This function returns ErrInvalidBufferSize if bufferSize is less than 0.
+//
 // This function returns ErrInvalidWorkerPoolSize if workerPoolSize is not at
 // least 1.
-func NewStage[I, O any](workerPoolSize int, bufferSize int, in Producer[I],
-	worker Worker[I, O]) (*Stage[I, O], error) {
+func NewStageStreamWorker[I, O any](workerPoolSize int, bufferSize int,
+	in Producer[I], worker StreamWorker[I, O]) (*Stage[I, O], error) {
 	if workerPoolSize < 1 {
 		return nil, ErrInvalidWorkerPoolSize
 	}
 	if bufferSize < 0 {
 		return nil, ErrInvalidBufferSize
 	}
+
 	return &Stage[I, O]{
+		err:            make(chan error),
 		in:             in,
 		out:            make(chan O, bufferSize),
+		started:        false,
 		workerPoolSize: workerPoolSize,
 		worker:         worker,
 	}, nil
@@ -104,58 +120,25 @@ func (s *Stage[I, O]) Produces() Producer[O] {
 // This method also returns a channel of errors, however, due to the fail-fast
 // nature of a pipeline, the execution will stop on the first error occurrence.
 func (s *Stage[I, O]) Start(ctx context.Context) <-chan error {
-	workerIn := make(chan I)
-	cs := make(chan (<-chan O))
-	errCh := make(chan error)
+	s.mutex.Lock()
+	if !s.started {
+		cs := make(chan (<-chan O))
+		es := make(chan (<-chan error))
 
-	// We create a sub-context here so that if an error should occur,
-	// we can use this to terminate the program flow.
-	_ctx, cancel := context.WithCancel(ctx)
-	go func() {
-		defer close(workerIn)
-		defer close(cs)
-		defer close(errCh)
+		go func() {
+			defer close(cs)
+			defer close(es)
 
-		workerCount := 0
-		for {
-			select {
-			case input, ok := <-s.in:
-				if !ok {
-					return
-				}
-				if workerCount < s.workerPoolSize {
-					workerOut := make(chan O)
-					go func() {
-						defer close(workerOut)
-						for {
-							select {
-							case i, ok := <-workerIn:
-								if !ok {
-									return
-								}
-								o, err := s.worker(i)
-								if err != nil {
-									errCh <- err
-									cancel()
-									return
-								}
-								workerOut <- o
-							case <-_ctx.Done():
-								return
-							}
-						}
-					}()
-
-					cs <- workerOut
-					workerCount++
-				}
-
-				workerIn <- input
-			case <-_ctx.Done():
-				return
+			for i := 0; i < s.workerPoolSize; i++ {
+				c, e := s.worker(ctx, s.in)
+				cs <- c
+				es <- e
 			}
-		}
-	}()
-	go merge(_ctx, s.out, cs)
-	return errCh
+		}()
+		go Merge(ctx, s.out, cs)
+		go Merge(ctx, s.err, es)
+		s.started = true
+	}
+	s.mutex.Unlock()
+	return s.err
 }
