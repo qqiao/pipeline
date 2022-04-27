@@ -19,7 +19,7 @@ import (
 	"errors"
 )
 
-// Errors for when the stage is in a invalid state
+// Errors for when the stage is in an invalid state
 var (
 	ErrInvalidBufferSize     = errors.New("invalid buffer size")
 	ErrInvalidWorkerPoolSize = errors.New("invalid worker pool size")
@@ -28,7 +28,9 @@ var (
 // Worker represent a unit of work.
 //
 // Workers are simple functions that takes an input and returns an output. The
-// Stage will take care of parallelizing workers and combining the results.
+// Stage will take care of the parallelization of workers and the combination
+// of the results.
+//
 // Since multiple Worker instances will be created, Worker functions are
 // expected to be thread-safe to prevent any unpredictable results.
 type Worker[I, O any] func(I) (O, error)
@@ -61,8 +63,8 @@ type Stage[I, O any] struct {
 //
 // This function returns ErrInvalidWorkerPoolSize if workerPoolSize is not at
 // least 1.
-func NewStage[I, O any](workerPoolSize int,
-	bufferSize int, in Producer[I], worker Worker[I, O]) (*Stage[I, O], error) {
+func NewStage[I, O any](workerPoolSize int, bufferSize int, in Producer[I],
+	worker Worker[I, O]) (*Stage[I, O], error) {
 	if workerPoolSize < 1 {
 		return nil, ErrInvalidWorkerPoolSize
 	}
@@ -100,11 +102,14 @@ func (s *Stage[I, O]) Produces() Producer[O] {
 // input channel.
 //
 // This method also returns a channel of errors, however, due to the fail-fast
-// nature of a pipeline, the execution will stop on the first error occurance.
+// nature of a pipeline, the execution will stop on the first error occurrence.
 func (s *Stage[I, O]) Start(ctx context.Context) <-chan error {
 	workerIn := make(chan I)
 	cs := make(chan (<-chan O))
 	errCh := make(chan error)
+
+	// We create a sub-context here so that if an error should occur,
+	// we can use this to terminate the program flow.
 	_ctx, cancel := context.WithCancel(ctx)
 	go func() {
 		defer close(workerIn)

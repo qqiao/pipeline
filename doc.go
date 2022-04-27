@@ -78,15 +78,15 @@ Stages
 
 Stages is heart of the pipeline. While the API of a Stage look extremely
 similar to that of a Pipeline, the actual multiplexing of the workers and the
-final collation of the results are done by the stage. Therefore the NewStage
+final collation of the results are done by the stage. Therefore, the NewStage
 function requires additional parameters to control the multiplexing behaviours
 of the stage.
 
 Each stage must have a Worker function. A worker is just a simple function that
-takes an input and returns an output. The Stage will take care of parallelizing
-workers and combining the results. Since multiple Worker instances will be
-created, Worker functions are expected to be thread-safe to prevent any
-unpredictable results.
+takes an input and returns an output. The Stage will take care of the
+parallelization workers and the combination of the results.vSince multiple
+Worker instances will be created, Worker functions are expected to be
+thread-safe to prevent any unpredictable results.
 
 The workerPoolSize parameter defines the upper bound of the number of workers.
 
@@ -171,7 +171,7 @@ this would potentially allow more code to run in parallel.
 The third dial that can affect the performance of a pipeline is the size of the
 worker pool. In theory, if the producer can saturate the worker pool, and the
 consumer can consume all of the output, then the throughput of each stage
-should scale linearly with with the size of the worker. However,  in reallity,
+should scale linearly with the size of the worker pool. However,  in reality,
 this scaling is affected by many factors and will almost never simply be
 linear.
 
