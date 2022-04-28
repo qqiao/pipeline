@@ -6,9 +6,12 @@ import "context"
 // producer and continuously produces output into the output channel.
 //
 // A StreamWorker also returns an error channel, any time anything is sent
-// into this channel, the execution of the entire pipeline will halt
-// immediately. This is to ensure that the pipeline correctly maintains its
+// into this channel, the stage and pipeline will immediately halt the
+// execution. This is to ensure that the pipeline stays consistent with the
 // fail-fast characteristics.
+//
+// StreamWorkers will be multiplexed based on workerPoolSize. Thus, they need
+// to be thread safe.
 type StreamWorker[I, O any] func(context.Context, Producer[I]) (<-chan O,
 	<-chan error)
 
@@ -20,9 +23,19 @@ type StreamWorker[I, O any] func(context.Context, Producer[I]) (<-chan O,
 //
 // Since multiple Worker instances will be created, Worker functions are
 // expected to be thread-safe to prevent any unpredictable results.
+//
+// Any time an error is returned, the stage and pipeline will immediately halt
+// any execution. This is to stay consistent with the fail-fast
+// characteristics.
+//
+// Due to the fact that Workers might be multiplexed, they should be
+// thread-safe.
 type Worker[I, O any] func(I) (O, error)
 
-// NewStreamWorker takes any Worker and converts it into a StreamWorker
+// NewStreamWorker takes any Worker and converts it into a StreamWorker.
+//
+// This allows the worker to be reused. Under the surface, the stage is simply
+// multiplexing StreamWorkers based on workerPoolSize.
 func NewStreamWorker[I, O any](worker Worker[I, O]) StreamWorker[I, O] {
 	return func(ctx context.Context, in Producer[I]) (<-chan O, <-chan error) {
 		output := make(chan O)
