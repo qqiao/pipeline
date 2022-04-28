@@ -204,7 +204,7 @@ worker goroutine, thus maintaining thread safety.
 Please note that even with workerPoolSize set to one, a pipeline is still
 useful in multiple ways: it still allows all the other benefits like chaining;
 you can still tweak the bufferSize of a stage so that the worker can start
-executing before the next stage is ready for better through-put.
+executing before the next stage is ready for better throughput.
 
 */
 package pipeline
