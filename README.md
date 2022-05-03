@@ -12,6 +12,6 @@ main Go module:
 ### Documentation and Usage
 
 API documentation and example code can be found at
-[pkg.go.dev](https://pkg.go.dev/github.com/qqiao/pipeline).
+[pkg.go.dev](https://pkg.go.dev/github.com/qqiao/pipeline/v2).
 
 ### Known issues
