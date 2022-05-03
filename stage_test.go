@@ -322,11 +322,11 @@ func TestStage_Start(t *testing.T) {
 		errCh := stage.Start(context.Background())
 
 		// If fail fast didn't happen, the following loop will infinite loop
-		for cont := true; cont; {
+		for done := false; !done; {
 			select {
 			case <-out:
 			case err = <-errCh:
-				cont = false
+				done = true
 			}
 		}
 
