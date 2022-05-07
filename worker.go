@@ -18,7 +18,7 @@ type StreamWorker[I, O any] func(context.Context, Producer[I]) (<-chan O,
 // Worker represent a unit of work.
 //
 // Workers are simple functions that takes an input and returns an output. The
-// Stage will take care of the parallelization of workers and the combination
+// Stage will take care of the concurrency of the workers and the combination
 // of the results.
 //
 // Since multiple Worker instances will be created, Worker functions are
