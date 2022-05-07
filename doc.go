@@ -65,7 +65,7 @@ of the stage.
 Each stage must have a Worker function. A worker can either be a simple
 function that takes an input and returns an output or an error;
 or a StreamWorker that continuously reads from the producer and sends its
-output into a channel. The Stage will take care of the parallelization
+output into a channel. The Stage will take care of the concurrency of the
 workers and the combination of the results. Since multiple Worker instances
 will be created, Worker functions are expected to be thread-safe to prevent
 any unpredictable results.
@@ -161,14 +161,14 @@ and bufferSize of the stage.
 Making the producer a buffered channel and adjusting the buffer size allows
 any code that sends into the producers to execute without having to block wait
 on the pipeline to be ready, which in turn might improve the overall
-performance of the application by allowing more code to actually run in
-parallel.
+performance of the application by allowing more code to actually run
+concurrently.
 
 Similar to making the producer channel a buffered channel, you can also adjust
 the bufferSize of each stage in the pipeline. This is buffer size of the output
 channel. This allows the stage to proceed without having to block wait on the
 consumer being ready. And similar to the effect of having a buffered producer,
-this would potentially allow more code to run in parallel.
+this would potentially allow more code to run concurrently.
 
 The third dial that can affect the performance of a pipeline is the size of the
 worker pool. In theory, if the producer can saturate the worker pool, and the

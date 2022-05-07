@@ -60,12 +60,12 @@ func NewStage[I, O any](workerPoolSize int, bufferSize int, in Producer[I],
 // Parameters
 //
 // workerPoolSize: internally, the stage maintains a pool of workers all
-// running in parallel, workerPoolSize specifies the upper bound of the
+// running concurrently, workerPoolSize specifies the upper bound of the
 // possible number of workers.
 //
 // bufferSize: size of the output buffer. Setting a bufferSize of greater than
 // 0 will make the output channel a buffered channel, which will allow some
-// work to be done in parallel without having to block wait for the consumer.
+// work to be done concurrently without having to block wait for the consumer.
 //
 // in: channel where input will be read from
 //
