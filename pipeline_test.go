@@ -19,11 +19,210 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"reflect" // Added reflect
+	"strconv" // Added strconv
 	"testing"
 	"time"
 
 	"github.com/qqiao/pipeline/v2"
 )
+
+// MyStruct is used in TestTypedPipeline_BasicTwoStage
+type MyStruct struct {
+	Value string
+}
+
+func TestTypedPipeline_BasicTwoStage(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Define typed workers
+	intToStringWorker := func(i int) (string, error) {
+		return fmt.Sprintf("val:%d", i), nil
+	}
+	stringToMyStructWorker := func(s string) (MyStruct, error) {
+		return MyStruct{Value: s}, nil
+	}
+
+	// Build the typed pipeline
+	builder0 := pipeline.NewTypedPipeline[int]()
+	builder1, err := pipeline.AddTypedStage(builder0, 1, 0, intToStringWorker)
+	if err != nil {
+		t.Fatalf("Failed to add intToStringWorker stage: %v", err)
+	}
+	builder2, err := pipeline.AddTypedStage(builder1, 1, 0, stringToMyStructWorker)
+	if err != nil {
+		t.Fatalf("Failed to add stringToMyStructWorker stage: %v", err)
+	}
+	typedPipeline, err := builder2.Build()
+
+	if err != nil {
+		t.Fatalf("Failed to build typed pipeline: %v", err)
+	}
+
+	// Setup input producer
+	inputStream := make(chan int, 2) // Buffered to prevent sender blocking before Start
+	typedPipeline.Consumes(inputStream)
+
+	// Get output consumer
+	outputStream, err := typedPipeline.Produces()
+	if err != nil {
+		t.Fatalf("Failed to get pipeline output channel: %v", err)
+	}
+
+	// Start the pipeline
+	errChan := typedPipeline.Start(ctx)
+
+	// Feed input
+	go func() {
+		defer close(inputStream)
+		inputStream <- 10
+		inputStream <- 20
+	}()
+
+	// Collect results
+	var results []MyStruct
+	var pipelineErr error
+
+	outputDone := false
+	errorDone := false
+	for !outputDone || !errorDone {
+		select {
+		case res, ok := <-outputStream:
+			if !ok {
+				outputDone = true
+				continue
+			}
+			results = append(results, res)
+		case errVal, ok := <-errChan:
+			if !ok {
+				errorDone = true
+				continue
+			}
+			if pipelineErr == nil { // Store first error
+				pipelineErr = errVal
+			}
+		}
+	}
+
+	if pipelineErr != nil {
+		t.Errorf("Pipeline reported an unexpected error: %v", pipelineErr)
+	}
+
+	expectedResults := []MyStruct{
+		{Value: "val:10"},
+		{Value: "val:20"},
+	}
+
+	// With workerPoolSize = 1 for all stages, the order should be preserved.
+	if !reflect.DeepEqual(results, expectedResults) {
+		t.Errorf("Expected results %v, got %v", expectedResults, results)
+	}
+}
+
+func TestTypedPipeline_WorkerError(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Define typed worker that can error
+	stringToFloatWorker := func(s string) (float64, error) {
+		if s == "error" {
+			return 0, errors.New("worker error triggered")
+		}
+		val, err := strconv.ParseFloat(s, 64)
+		if err != nil {
+			return 0, fmt.Errorf("strconv error: %w", err)
+		}
+		return val, nil
+	}
+
+	// Build the typed pipeline
+	builder0 := pipeline.NewTypedPipeline[string]()
+	builder1, err := pipeline.AddTypedStage(builder0, 1, 0, stringToFloatWorker)
+	if err != nil {
+		t.Fatalf("Failed to add stringToFloatWorker stage: %v", err)
+	}
+	typedPipeline, err := builder1.Build()
+
+	if err != nil {
+		t.Fatalf("Failed to build typed pipeline: %v", err)
+	}
+
+	// Setup input producer
+	inputStream := make(chan string, 3) // Buffered
+	typedPipeline.Consumes(inputStream)
+
+	// Get output consumer
+	outputStream, err := typedPipeline.Produces()
+	if err != nil {
+		t.Fatalf("Failed to get pipeline output channel: %v", err)
+	}
+
+	// Start the pipeline
+	errChan := typedPipeline.Start(ctx)
+
+	// Feed input
+	go func() {
+		defer close(inputStream)
+		inputStream <- "1.23"
+		inputStream <- "error" // This will cause an error
+		inputStream <- "4.56"  // This might not be processed
+	}()
+
+	// Collect results and error
+	var results []float64
+	var firstPipelineError error
+	var allErrors []error
+
+	outputClosed := false
+	pipelineErrorClosed := false
+
+	for !outputClosed || !pipelineErrorClosed {
+		select {
+		case res, ok := <-outputStream:
+			if !ok {
+				outputClosed = true
+				continue
+			}
+			results = append(results, res)
+		case errVal, ok := <-errChan:
+			if !ok {
+				pipelineErrorClosed = true
+				continue
+			}
+			allErrors = append(allErrors, errVal)
+			if firstPipelineError == nil {
+				firstPipelineError = errVal
+			}
+		}
+	}
+
+	// Check for the specific worker error
+	if firstPipelineError == nil {
+		t.Errorf("Expected a pipeline error, but got none. All errors: %v", allErrors)
+	} else {
+		expectedErrorMsg := "worker error triggered"
+		// The error from AddStageStreamWorker in pipeline.go or the genericStreamWorker wrapper
+		// might wrap the original error. We should check using errors.Is or string contains.
+		// Our genericStreamWorker sends the error directly.
+		// The pipeline's Start method merges errors, so it should be the direct error.
+		if firstPipelineError.Error() != expectedErrorMsg {
+			t.Errorf("Expected error message '%s', got '%s'", expectedErrorMsg, firstPipelineError.Error())
+		}
+	}
+
+	// Check that not all inputs were processed if the error occurred mid-stream.
+	// With fail-fast, after "error", "4.56" should not be processed into a float.
+	// We expect only 1.23 to be in results.
+	expectedResults := []float64{1.23}
+	if !reflect.DeepEqual(results, expectedResults) {
+		t.Errorf("Expected results %v due to error, got %v", expectedResults, results)
+	}
+}
 
 func ExamplePipeline_Consumes() {
 	producer := make(chan int)

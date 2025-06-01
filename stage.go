@@ -43,8 +43,9 @@ type Stage[I, O any] struct {
 // NewStage creates a new stage with necessary parameters specified.
 //
 // Internally, this function is nothing but a shorthand for the following:
-//     sw := NewStreamWorker(worker)
-//     stage := NewStageStreamWorker(workerPoolSize, bufferSize, in, sw)
+//
+//	sw := NewStreamWorker(worker)
+//	stage := NewStageStreamWorker(workerPoolSize, bufferSize, in, sw)
 //
 // Please refer to documentation of NewStageStreamWorker for details of all
 // parameters.
@@ -57,7 +58,7 @@ func NewStage[I, O any](workerPoolSize int, bufferSize int, in Producer[I],
 // NewStageStreamWorker creates a new stage with the given StreamWorker and
 // parameters.
 //
-// Parameters
+// # Parameters
 //
 // workerPoolSize: internally, the stage maintains a pool of workers all
 // running concurrently, workerPoolSize specifies the upper bound of the

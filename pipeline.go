@@ -52,16 +52,17 @@ var (
 )
 
 // NewPipeline creates a pipeline.
-//
-// Please note that pipelines created this way does not have a producer
-// channel, thus calling AddStage before calling Consumes will result in
-// AddStage throwing an ErrNoProducer.
+// It initializes an internal producer channel. The user should call the Consumes()
+// method on the returned pipeline to set the actual data source, which will replace
+// this initial internal producer.
+// For type-safe pipeline construction with multiple stages, see TypedPipelineBuilder.
 func NewPipeline[I, O any]() *Pipeline[I, O] {
 	return &Pipeline[I, O]{
-		err:     make(chan error),
-		out:     make(chan O),
-		stages:  make([]*Stage[any, any], 0),
-		started: false,
+		err:      make(chan error),
+		out:      make(chan O),
+		producer: make(chan I), // Initialize producer to non-nil
+		stages:   make([]*Stage[any, any], 0),
+		started:  false,
 	}
 }
 
@@ -71,8 +72,8 @@ func NewPipeline[I, O any]() *Pipeline[I, O] {
 // method on the returned pipeline in sequence, this method is exactly
 // equivalent to the following code:
 //
-//     pipeline := NewPipeline[I, O]()
-//     pipeline.Consumes(producer)
+//	pipeline := NewPipeline[I, O]()
+//	pipeline.Consumes(producer)
 func NewPipelineWithProducer[I, O any](producer Producer[I]) *Pipeline[I, O] {
 	pipeline := NewPipeline[I, O]()
 	pipeline.Consumes(producer)
@@ -84,8 +85,9 @@ func NewPipelineWithProducer[I, O any](producer Producer[I]) *Pipeline[I, O] {
 // Internally, this method first transforms the worker to a StreamWorker and
 // then calls AddStageStreamWorker. So this function is exactly equivalent
 // to the following:
-//     sw := NewStreamWorker(worker)
-//     p.AddStageStreamWorker(workerPoolSize, bufferSize, sw)
+//
+//	sw := NewStreamWorker(worker)
+//	p.AddStageStreamWorker(workerPoolSize, bufferSize, sw)
 //
 // Please refer to the documentation of AddStageStreamWorker for more details.
 func (p *Pipeline[I, O]) AddStage(workerPoolSize int, bufferSize int,

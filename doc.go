@@ -13,11 +13,10 @@
 // limitations under the License.
 
 /*
-
 Package pipeline contains an implementation of the Pipeline concurrency pattern
 with Go 1.18 generics support.
 
-Background
+# Background
 
 This Pipeline concurrency pattern is inspired by the blog post from the Go dev
 team here: https://go.dev/blog/pipelines.
@@ -29,7 +28,7 @@ Additional care has also been taken in the design of the API to ensure that
 both connecting multiple pipelines and creating multi-stage pipelines are as
 easy as possible.
 
-Basic Concepts
+# Basic Concepts
 
 To better understand how a pipeline works we start by taking a look at the
 components that make up a pipeline.
@@ -52,9 +51,10 @@ A ConsumerFunc, which is a function that takes a channel, into which the
 results of the pipeline are sent, as its sole argument. Since a channel where
 values are sent into is also the definition of a Producer, you can consider a
 ConsumerFunc as this:
-    type ConsumerFunc[I any] func(Producer[I])
 
-Stages
+	type ConsumerFunc[I any] func(Producer[I])
+
+# Stages
 
 Stages are the heart of the pipeline. While the API of a Stage look extremely
 similar to that of a Pipeline, the actual multiplexing of the workers and the
@@ -85,7 +85,7 @@ The bufferSize parameter defines the buffer size of the output channel. This
 allows the processing to start without having to block wait on the consumer to
 start reading.
 
-Consuming a Pipeline
+# Consuming a Pipeline
 
 There are multiple ways of consuming the output of a pipeline.
 
@@ -105,7 +105,7 @@ encourage applications to not use this approach and instead use methods 1 and
 More advanced uses of the Consumer and Producer pattern will be discussed
 further in the Chaining Pipelines section.
 
-Chaining Pipelines
+# Chaining Pipelines
 
 A Pipeline also has a set of APIs to make pipeline chaining straight-forward.
 While connecting multiple pipelines will produce identical results as a single
@@ -127,7 +127,7 @@ with the Consumes method.
 Examples of composing pipelines can be found in the example of the Produces
 method.
 
-Stopping Short
+# Stopping Short
 
 Sometimes it is desirable to stop a pipeline short of its completion. A good
 example would be that if we use a pipeline for a web server, in which case the
@@ -143,7 +143,7 @@ needs to stop the pipeline immediately, it should cancel the context, and
 the pipeline and all of its stages will stop processing and terminate
 gracefully.
 
-Error Handling
+# Error Handling
 
 A pipeline is designed to fail fast. That is, if any error should occur at any
 time at any stage, the pipeline terminates.
@@ -152,7 +152,7 @@ The Start function on both Stage and Pipeline returns a channel of errors,
 however, as soon as a single error is fed into the channel, the entile pipeline
 halts and the error can be read from the channel.
 
-Performance Tuning
+# Performance Tuning
 
 There are 3 important dials that would help fine tune the performance
 characteristics of a pipeline: the buffer size of the producer, workerPoolSize
@@ -184,7 +184,7 @@ buffer sizes and worker pool sizes.
 The Benchmark* methods in stage_test.go offers a good starting point on how
 to write such benchmark test cases.
 
-Thread Safety
+# Thread Safety
 
 While use cases would be extremely rare for a pipeline itself or its stages
 to be shared across multiple goroutines, efforts have been made to ensure that
@@ -205,6 +205,5 @@ Please note that even with workerPoolSize set to one, a pipeline is still
 useful in multiple ways: it still allows all the other benefits like chaining;
 you can still tweak the bufferSize of a stage so that the worker can start
 executing before the next stage is ready for better throughput.
-
 */
 package pipeline
